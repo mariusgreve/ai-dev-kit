@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Commit Message"
+  short_description: "Write clear commit messages from repository changes"
+  default_prompt: "Use $git-commit-message to write a commit message for my current changes."
