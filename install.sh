@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Also works when read from stdin: curl -fsSL .../install.sh | bash
+source_dir=""
+if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+  source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
 install_dir="${AIDEV_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/ai-dev-kit}"
 bin_dir="${AIDEV_BIN_DIR:-$HOME/.local/bin}"
 command_path="$bin_dir/aidev"
@@ -14,23 +18,26 @@ fail() {
 command -v git >/dev/null 2>&1 || fail "git is required"
 command -v python3 >/dev/null 2>&1 || fail "python3 is required"
 
-source_remote="$(git -C "$source_dir" remote get-url origin 2>/dev/null || true)"
-[[ -n "$source_remote" ]] || fail "this checkout needs a Git remote named 'origin'"
-
-if [[ -e "$install_dir" && ! -d "$install_dir/.git" ]]; then
-  fail "$install_dir already exists but is not an ai-dev-kit Git checkout"
-fi
-
-if [[ -d "$install_dir/.git" ]]; then
-  installed_remote="$(git -C "$install_dir" remote get-url origin 2>/dev/null || true)"
-  [[ "$installed_remote" == "$source_remote" ]] || fail "$install_dir belongs to another Git remote"
-  git -C "$install_dir" pull --ff-only
+source_remote="${AIDEV_REPOSITORY_URL:-}"
+bootstrap_dir=""
+trap '[[ -z "$bootstrap_dir" ]] || rm -rf "$bootstrap_dir"' EXIT
+if [[ -n "$source_dir" && -f "$source_dir/cli/aidev.py" ]]; then
+  bootstrap_cli="$source_dir/cli/aidev.py"
+  if [[ -z "$source_remote" ]]; then
+    source_remote="$(git -C "$source_dir" remote get-url origin 2>/dev/null || true)"
+  fi
 else
-  mkdir -p "$(dirname "$install_dir")"
-  git clone "$source_remote" "$install_dir"
+  command -v curl >/dev/null 2>&1 || fail "curl is required for standalone installation"
+  bootstrap_dir="$(mktemp -d)"
+  bootstrap_cli="$bootstrap_dir/aidev.py"
+  bootstrap_url="${AIDEV_BOOTSTRAP_URL:-https://raw.githubusercontent.com/mariusgreve/ai-dev-kit/main/cli/aidev.py}"
+  curl --fail --silent --show-error --location "$bootstrap_url" -o "$bootstrap_cli"
 fi
+source_remote="${source_remote:-https://github.com/mariusgreve/ai-dev-kit.git}"
 
-touch "$install_dir/.aidev-install"
+# The bootstrap selects committed content from origin, never the local worktree.
+AIDEV_HOME="$install_dir" python3 "$bootstrap_cli" install-skills --remote "$source_remote"
+
 mkdir -p "$bin_dir"
 
 if [[ -L "$command_path" ]]; then

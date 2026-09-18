@@ -6,11 +6,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import tempfile
 import shutil
 import stat
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 SUPPORTED_STACKS = ("java", "spring", "postgres", "react", "typescript")
@@ -27,6 +30,156 @@ def write_new(path: Path, content: str, executable: bool = False) -> str:
     if executable:
         path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return f"created {path}"
+
+
+def ensure_skill_link(path: Path, target: Path) -> str:
+    if path.is_symlink() and path.resolve() == target.resolve():
+        return f"kept    {path}"
+    if path.exists() or path.is_symlink():
+        raise ValueError(f"{path} already exists; refusing to replace another skill")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.symlink_to(os.path.relpath(target.resolve(), path.parent.resolve()), target_is_directory=True)
+    return f"linked  {path}"
+
+
+def global_skill_roots() -> list[Path]:
+    # Codex and Copilot share .agents; Claude needs its own discovery path.
+    return [Path.home() / ".agents/skills",
+            Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "skills"]
+
+
+def installation_root() -> Path:
+    return Path(os.environ.get("AIDEV_HOME", Path(os.environ.get(
+        "XDG_DATA_HOME", Path.home() / ".local/share")) / "ai-dev-kit")).expanduser().resolve()
+
+
+def skill_manifest(root: Path | None = None) -> Path:
+    return (root or installation_root()) / ".aidev-skill-links.json"
+
+
+def read_skill_links(root: Path | None = None) -> dict[str, str]:
+    path = skill_manifest(root)
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def remove_skill_links(links: dict[str, str]) -> None:
+    for name, target in links.items():
+        path = Path(name)
+        if path.is_symlink() and path.resolve() == Path(target).resolve():
+            path.unlink()
+
+
+def git(root: Path, *args: str) -> str:
+    result = subprocess.run(["git", "-C", str(root), *args], text=True, capture_output=True)
+    if result.returncode:
+        raise ValueError(result.stderr.strip() or "Git operation failed")
+    return result.stdout.strip()
+
+
+def remote_identity(remote: str) -> str:
+    # GitHub SSH and HTTPS URLs can refer to the same repository. This matters
+    # when switching from a local checkout installer to the curl bootstrap.
+    if remote.startswith("git@github.com:"):
+        return "github.com/" + remote.split(":", 1)[1].removesuffix(".git").rstrip("/")
+    parsed = urlparse(remote)
+    if parsed.hostname == "github.com" and parsed.scheme in {"https", "ssh"}:
+        return "github.com/" + parsed.path.strip("/").removesuffix(".git")
+    return remote
+
+
+def stable_revision(checkout: Path) -> tuple[str, str]:
+    # Only final semantic-version tags count as published stable releases.
+    versions = []
+    for tag in git(checkout, "tag", "--list").splitlines():
+        match = re.fullmatch(r"v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", tag)
+        if match:
+            versions.append((tuple(map(int, match.groups())), tag))
+    ref = "refs/tags/" + max(versions)[1] if versions else "refs/remotes/origin/main"
+    return ref, git(checkout, "rev-parse", "--verify", ref + "^{commit}")
+
+
+def install_skills(remote: str | None = None) -> int:
+    destination = installation_root()
+    remote = remote or git(ROOT, "remote", "get-url", "origin")
+    if destination == ROOT.resolve() and not (ROOT / ".aidev-install").is_file():
+        raise ValueError("AIDEV_HOME must not point to the development checkout")
+    if destination.exists():
+        if not (destination / ".aidev-install").is_file():
+            raise ValueError(f"Refusing to replace unmarked installation: {destination}")
+        if remote_identity(git(destination, "remote", "get-url", "origin")) != remote_identity(remote):
+            raise ValueError(f"{destination} belongs to another Git remote")
+        # Ignore only installer metadata, not arbitrary user changes.
+        changed = git(destination, "status", "--porcelain", "--untracked-files=all", "--",
+                      ".", ":(exclude).aidev-install", ":(exclude).aidev-skill-links.json",
+                      ":(exclude).aidev-release.json")
+        if changed:
+            raise ValueError(f"Installed checkout has local changes; refusing to replace {destination}")
+    previous = read_skill_links(destination)
+    # Migrate links created by older versions directly into a development repo.
+    legacy = read_skill_links(ROOT) if ROOT.resolve() != destination else {}
+    owned = {**legacy, **previous}
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".aidev-stage-", dir=destination.parent) as temporary:
+        staged = Path(temporary) / "checkout"
+        # Fetch origin, never the development worktree or its local-only tags.
+        result = subprocess.run(["git", "clone", "--no-checkout", "--", remote, str(staged)],
+                                text=True, capture_output=True)
+        if result.returncode:
+            raise ValueError(result.stderr.strip())
+        ref, commit = stable_revision(staged)
+        git(staged, "checkout", "--detach", commit)
+        skills = sorted(path.name for path in (staged / "skills").iterdir()
+                        if (path / "SKILL.md").is_file())
+        if not skills:
+            raise ValueError(f"No skills found in {ref}")
+        desired = {str(directory / name): str(destination / "skills" / name)
+                   for directory in global_skill_roots() for name in skills}
+        for name, target in desired.items():
+            path = Path(name)
+            if (path.exists() or path.is_symlink()) and not (
+                path.is_symlink() and (path.resolve() == Path(target).resolve() or
+                    (name in owned and path.resolve() == Path(owned[name]).resolve()))
+            ):
+                raise ValueError(f"{path} already exists; refusing to replace another skill")
+        (staged / ".aidev-install").touch()
+        skill_manifest(staged).write_text(json.dumps(desired, indent=2) + "\n", encoding="utf-8")
+        (staged / ".aidev-release.json").write_text(json.dumps(
+            {"remote": remote, "ref": ref, "commit": commit}, indent=2) + "\n", encoding="utf-8")
+        with (staged / ".git/info/exclude").open("a", encoding="utf-8") as exclude:
+            exclude.write("\n.aidev-install\n.aidev-skill-links.json\n.aidev-release.json\n")
+        backup = Path(temporary) / "previous"
+        if destination.exists():
+            destination.rename(backup)
+        try:
+            staged.rename(destination)
+        except OSError:
+            if backup.exists():
+                backup.rename(destination)
+            raise
+        for name, target in desired.items():
+            path = Path(name)
+            if path.is_symlink() and path.resolve() != Path(target).resolve():
+                path.unlink()  # Preflight verified this was a kit-owned legacy link.
+            print(ensure_skill_link(path, Path(target)))
+        remove_skill_links({name: target for name, target in owned.items() if name not in desired})
+    if legacy:
+        skill_manifest(ROOT).unlink()
+    print(f"Installed stable skills from {ref} ({commit[:12]}) in {destination}")
+    print("Restart existing agent sessions to reload skills.")
+    return 0
+
+
+def install_project_skill(project: Path, name: str) -> list[str]:
+    # One portable project snapshot, including supporting resources. All tool
+    # discovery entries reference it, and existing project overrides survive.
+    target = project / ".ai/skills" / name
+    outputs = []
+    if not target.exists() and not target.is_symlink():
+        shutil.copytree(ROOT / "skills" / name, target)
+        outputs.append(f"created {target}")
+    for directory in (".agents/skills", ".claude/skills"):
+        outputs.append(ensure_skill_link(project / directory / name, target))
+    return outputs
 
 
 def read(relative: str) -> str:
@@ -176,7 +329,7 @@ def init(args: argparse.Namespace) -> int:
     for name in DEFAULT_TEMPLATES:
         outputs.append(write_new(project / f".ai/templates/{name}.md", read(f"templates/{name}.md")))
     for stack in sorted(stacks):
-        outputs.append(write_new(project / f".ai/skills/{stack}/SKILL.md", read(f"skills/{stack}/SKILL.md")))
+        outputs.extend(install_project_skill(project, stack))
     outputs += [
         write_new(project / "CLAUDE.md", read("adapters/claude/CLAUDE.md")),
         write_new(project / ".github/copilot-instructions.md", read("adapters/copilot/copilot-instructions.md")),
@@ -196,6 +349,10 @@ def validate_project(project: Path) -> int:
         try:
             config = json.loads(config_path.read_text(encoding="utf-8"))
             unknown = set(config.get("stacks", [])) - set(SUPPORTED_STACKS)
+            for name in set(config.get("stacks", [])) - unknown:
+                for directory in (".agents/skills", ".claude/skills"):
+                    if not (project / directory / name / "SKILL.md").is_file():
+                        errors.append(f"skill not discoverable: {directory}/{name}; re-run aidev init")
             if unknown:
                 errors.append("unknown stacks: " + ", ".join(sorted(unknown)))
         except (json.JSONDecodeError, OSError) as exc:
@@ -208,11 +365,8 @@ def validate_project(project: Path) -> int:
 
 
 def update_kit() -> int:
-    if not (ROOT / ".git").is_dir():
-        print("This installation is not a Git checkout and cannot update itself.", file=sys.stderr)
-        return 1
-    completed = subprocess.run(["git", "-C", str(ROOT), "pull", "--ff-only"], check=False)
-    return completed.returncode
+    # Install and update use exactly the same remote release selection policy.
+    return install_skills()
 
 
 def uninstall_kit(yes: bool) -> int:
@@ -231,6 +385,7 @@ def uninstall_kit(yes: bool) -> int:
             return 0
     if command_path.is_symlink() and command_path.resolve() == (ROOT / "aidev").resolve():
         command_path.unlink()
+    remove_skill_links(read_skill_links(ROOT))
     shutil.rmtree(ROOT)
     print("ai-dev-kit was uninstalled. Shell PATH configuration was left unchanged.")
     return 0
@@ -246,7 +401,9 @@ def main() -> int:
     p_validate = sub.add_parser("validate", help="validate a project harness")
     p_validate.add_argument("project", nargs="?", default=".")
     sub.add_parser("list", help="list available reusable content")
-    sub.add_parser("update", help="update the installed kit with git pull --ff-only")
+    p_skills = sub.add_parser("install-skills", help="install stable kit skills for local AI tools")
+    p_skills.add_argument("--remote", help="Git remote to install from (defaults to origin)")
+    sub.add_parser("update", help="install the latest stable version tag, falling back to origin/main")
     p_uninstall = sub.add_parser("uninstall", help="remove an installation created by install.sh")
     p_uninstall.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
     args = parser.parse_args()
@@ -254,6 +411,8 @@ def main() -> int:
         return init(args)
     if args.command == "validate":
         return validate_project(Path(args.project).resolve())
+    if args.command == "install-skills":
+        return install_skills(args.remote)
     if args.command == "update":
         return update_kit()
     if args.command == "uninstall":
@@ -265,4 +424,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except (OSError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        raise SystemExit(1)

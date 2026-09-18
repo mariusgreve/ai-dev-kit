@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 .DS_Store
 .aidev-install
+.aidev-skill-links.json
+.aidev-release.json
