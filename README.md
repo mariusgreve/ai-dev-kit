@@ -12,7 +12,11 @@ No initial repository clone is needed:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mariusgreve/ai-dev-kit/main/install.sh | bash
+```
 
+Then initialize and validate your project:
+
+```bash
 cd /path/to/project
 aidev init
 aidev validate
