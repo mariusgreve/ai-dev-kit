@@ -126,16 +126,18 @@ Global skills follow kit updates; project snapshots remain project-owned.
 
 ## Bootstrap from an example repository
 
-Use `skills/bootstrap-from-reference/SKILL.md` with an AI coding agent. Provide
-the reference repository, destination, new project name and requirements spec.
+Ask your AI coding agent to use the `bootstrap-from-reference` skill.
+Provide the reference repository, destination, new project name and requirements
+spec.
 The skill derives the stack and conventions from source evidence, separates
 reusable setup from domain behavior, and builds a verified project foundation.
 It supports applications, services, libraries, CLIs and other project types.
 
 Example prompt:
 
-> Use skills/bootstrap-from-reference/SKILL.md. Reference: ../example.
-> Destination: ../new-project. Requirements: ./requirements.md.
+> Use the bootstrap-from-reference skill. Reference repository: ../example.
+> Destination: ../new-project. Project name: new-project.
+> Requirements: ./requirements.md.
 > Create the base structure and document what remains to implement.
 
 This is a task skill, not a value for `aidev init --stacks`. The installer
