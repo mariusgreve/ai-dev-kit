@@ -1,0 +1,4 @@
+interface:
+  display_name: "Bootstrap from Reference"
+  short_description: "Create a new project from a reference repository"
+  default_prompt: "Use $bootstrap-from-reference to analyze my example repository and scaffold a new project from my requirements."
