@@ -28,7 +28,7 @@ class CliTest(unittest.TestCase):
                     help_result = self.run_cli(entry, "--help", cwd=directory)
                     self.assertEqual(help_result.returncode, 0, help_result.stderr)
                     self.assertIn("install-skills", help_result.stdout)
-                    self.assertIn("explain", help_result.stdout)
+                    self.assertNotIn("explain", help_result.stdout)
 
     def test_project_commands_route_correctly_and_report_errors(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -38,10 +38,11 @@ class CliTest(unittest.TestCase):
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
             validated = self.run_cli(REPO / "cli/aidev.py", "validate", str(project), cwd=directory)
             self.assertEqual(validated.returncode, 0, validated.stderr)
-            self.assertIn("Valid AI harness:", validated.stdout)
+            self.assertIn("Setup files and skill links are valid:", validated.stdout)
+            self.assertIn("Builds and tests were not run", validated.stdout)
             invalid = self.run_cli(REPO / "cli/aidev.py", "task", "--project", str(project), cwd=directory)
-            self.assertEqual(invalid.returncode, 1)
-            self.assertIn("Error: Provide a task description or --spec", invalid.stderr)
+            self.assertEqual(invalid.returncode, 2)
+            self.assertIn("workflow has been removed", invalid.stderr)
             self.assertNotIn("Traceback", invalid.stderr)
 
 

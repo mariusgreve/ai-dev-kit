@@ -267,7 +267,8 @@ class InstallerLifecycleTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             run('bash', str(source / 'install.sh'))
             run(str(bin_dir / 'aidev'), 'list')
-            run(str(bin_dir / 'aidev'), 'inspect', 'review architecture', '--project', str(source))
+            run(str(bin_dir / 'aidev'), 'init', str(base / 'project'), '--yes')
+            run(str(bin_dir / 'aidev'), 'validate', str(base / 'project'))
             self.assertTrue((home / '.agents/skills/java/SKILL.md').samefile(installed / 'skills/java/SKILL.md'))
             self.assertTrue((home / 'custom-claude/skills/java').is_symlink())
             extra = source / 'skills/extra'

@@ -11,18 +11,18 @@ from pathlib import Path
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from cli import installation, project, tasks
-from cli.catalog import SUPPORTED_STACKS, DEFAULT_PLAYBOOKS, DEFAULT_PRINCIPLES
+from cli import installation, project
+from cli.catalog import ROOT, SUPPORTED_STACKS
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog="aidev")
     sub = parser.add_subparsers(dest="command", required=True)
-    p_init = sub.add_parser("init", help="initialize a project harness")
+    p_init = sub.add_parser("init", help="initialize project instructions and checks")
     p_init.add_argument("project", nargs="?", default=".")
     p_init.add_argument("--stacks", nargs="+", choices=SUPPORTED_STACKS, default=None)
     p_init.add_argument("--yes", action="store_true", help="accept detected stacks without prompting")
-    p_validate = sub.add_parser("validate", help="validate a project harness")
+    p_validate = sub.add_parser("validate", help="check setup files and skill links (does not run tests)")
     p_validate.add_argument("project", nargs="?", default=".")
     sub.add_parser("list", help="list available reusable content")
     p_skills = sub.add_parser("install-skills", help="install stable kit skills for local AI tools")
@@ -30,24 +30,11 @@ def main() -> int:
     sub.add_parser("update", help="install the latest stable version tag, falling back to origin/main")
     p_uninstall = sub.add_parser("uninstall", help="remove an installation created by install.sh")
     p_uninstall.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
-    for name in ("task", "inspect", "explain"):
-        command = sub.add_parser(name, help={
-            "task": "compile task context and prepare an RPI handoff",
-            "inspect": "preview task context without writing files",
-            "explain": "explain context selection without writing files",
-        }[name])
-        command.add_argument("description", nargs="?", default="")
-        command.add_argument("--project", default=".", help="project root (default: current directory)")
-        command.add_argument("--spec", help="spec path, relative to the project root")
-        command.add_argument("--playbook", help="override automatic playbook selection")
-        if name == "task":
-            command.add_argument("--agent", nargs=argparse.REMAINDER,
-                                 help="executable and arguments receiving the handoff on stdin; must be last")
-        else:
-            command.add_argument("--json", action="store_true", help="emit structured context and selection reasons")
+    if len(sys.argv) > 1 and sys.argv[1] in {"task", "inspect", "explain"}:
+        parser.exit(2, "The task/inspect/explain workflow has been removed. Give your task or spec "
+                    "directly to your coding agent; use ./.ai/verify.sh for project checks. "
+                    "Existing task notes are unchanged.\n")
     args = parser.parse_args()
-    if args.command in {"task", "inspect", "explain"}:
-        return tasks.task_command(args)
     if args.command == "init":
         return project.init(args)
     if args.command == "validate":
@@ -59,8 +46,8 @@ def main() -> int:
     if args.command == "uninstall":
         return installation.uninstall_kit(args.yes)
     print("Stacks: " + ", ".join(SUPPORTED_STACKS))
-    print("Playbooks: " + ", ".join(DEFAULT_PLAYBOOKS))
-    print("Principles: " + ", ".join(DEFAULT_PRINCIPLES))
+    print("Task skills: bootstrap-from-reference, git-commit-message")
+    print(f"Optional templates: {ROOT / 'templates'}")
     return 0
 
 
