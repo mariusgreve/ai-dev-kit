@@ -6,8 +6,8 @@ import tempfile
 import unittest
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "cli"))
-from context_compiler import compile_context, save_task
+sys.path.insert(0, str(REPO))
+from cli.context_compiler import compile_context, save_task
 
 
 class ContextTest(unittest.TestCase):

@@ -1,15 +1,14 @@
-import importlib.util
+import sys
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
 
-CLI_PATH = Path(__file__).resolve().parents[1] / "cli" / "aidev.py"
-SPEC = importlib.util.spec_from_file_location("aidev_cli", CLI_PATH)
-aidev = importlib.util.module_from_spec(SPEC)
-assert SPEC.loader is not None
-SPEC.loader.exec_module(aidev)
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+from cli.detection import detect_stacks
+from cli.project import init
 
 
 class StackDetectionTest(unittest.TestCase):
@@ -23,7 +22,7 @@ class StackDetectionTest(unittest.TestCase):
                 json.dumps({"dependencies": {"react": "latest", "typescript": "latest"}}),
                 encoding="utf-8",
             )
-            detected = aidev.detect_stacks(project)
+            detected = detect_stacks(project)
             self.assertEqual(
                 set(detected), {"java", "spring", "postgres", "react", "typescript"}
             )
@@ -35,14 +34,14 @@ class StackDetectionTest(unittest.TestCase):
             generated = project / "node_modules" / "example"
             generated.mkdir(parents=True)
             (generated / "package.json").write_text('{"dependencies":{"react":"latest"}}')
-            self.assertEqual(aidev.detect_stacks(project), {})
+            self.assertEqual(detect_stacks(project), {})
 
     def test_init_accepts_detected_stacks_non_interactively(self):
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory)
             (project / "tsconfig.json").write_text("{}", encoding="utf-8")
             args = type("Args", (), {"project": str(project), "stacks": None, "yes": True})()
-            self.assertEqual(aidev.init(args), 0)
+            self.assertEqual(init(args), 0)
             config = json.loads((project / ".ai/config.json").read_text(encoding="utf-8"))
             self.assertEqual(config["stacks"], ["typescript"])
 

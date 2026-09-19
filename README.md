@@ -32,7 +32,7 @@ bash /tmp/ai-dev-kit-install.sh
 
 From an existing development checkout, `./install.sh` works too. Both methods
 fetch published content from origin, never local uncommitted changes.
-The bootstrap installer comes from `main`; the installed kit and skills use the
+The self-contained `cli/installation.py` bootstrap comes from `main`; the installed kit and skills use the
 release selection policy below.
 
 With no `--stacks` argument, `aidev init` inspects common build, dependency and
@@ -228,6 +228,24 @@ each requirement to implementation steps and proof. Implement records changed
 files and actual verification evidence, using `.ai/config.json`'s `verification`
 command (default `./.ai/verify.sh`). Generated requirement statuses stay
 `unverified` until the agent supplies evidence; compilation never marks them done.
+
+## CLI structure
+
+The CLI uses the Python standard library and keeps responsibilities separate:
+
+- `cli/aidev.py`: argument parsing and command dispatch.
+- `cli/installation.py`: stable releases, global skill links, updates and uninstall.
+- `cli/project.py`: project scaffolding, local skill snapshots and validation.
+- `cli/detection.py`: stack detection and supporting evidence.
+- `cli/tasks.py`: task previews, handoff files and agent execution.
+- `cli/context_compiler.py`: context selection and RPI handoff rendering.
+- `cli/catalog.py`: shared content names and kit location.
+
+`cli` is a regular Python package. Both `./aidev` and `python3 cli/aidev.py`
+remain supported. The installer downloads `cli/installation.py` alone before
+fetching the stable kit with Git, so that module must remain self-contained
+and import only standard-library modules. Project setup reuses its skill-link
+helper; installation does not depend on project or task commands.
 
 ## Development checks
 

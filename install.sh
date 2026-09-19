@@ -21,16 +21,16 @@ command -v python3 >/dev/null 2>&1 || fail "python3 is required"
 source_remote="${AIDEV_REPOSITORY_URL:-}"
 bootstrap_dir=""
 trap '[[ -z "$bootstrap_dir" ]] || rm -rf "$bootstrap_dir"' EXIT
-if [[ -n "$source_dir" && -f "$source_dir/cli/aidev.py" ]]; then
-  bootstrap_cli="$source_dir/cli/aidev.py"
+if [[ -n "$source_dir" && -f "$source_dir/cli/installation.py" ]]; then
+  bootstrap_cli="$source_dir/cli/installation.py"
   if [[ -z "$source_remote" ]]; then
     source_remote="$(git -C "$source_dir" remote get-url origin 2>/dev/null || true)"
   fi
 else
   command -v curl >/dev/null 2>&1 || fail "curl is required for standalone installation"
   bootstrap_dir="$(mktemp -d)"
-  bootstrap_cli="$bootstrap_dir/aidev.py"
-  bootstrap_url="${AIDEV_BOOTSTRAP_URL:-https://raw.githubusercontent.com/mariusgreve/ai-dev-kit/main/cli/aidev.py}"
+  bootstrap_cli="$bootstrap_dir/installation.py"
+  bootstrap_url="${AIDEV_BOOTSTRAP_URL:-https://raw.githubusercontent.com/mariusgreve/ai-dev-kit/main/cli/installation.py}"
   curl --fail --silent --show-error --location "$bootstrap_url" -o "$bootstrap_cli"
 fi
 source_remote="${source_remote:-https://github.com/mariusgreve/ai-dev-kit.git}"
