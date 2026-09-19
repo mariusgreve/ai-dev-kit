@@ -1,8 +1,8 @@
 # AI Dev Kit
 
 Reusable coding skills, short project instructions and one command for project
-checks. The kit helps you start consistently; it does not manage your tasks or
-require a particular development process.
+checks. The kit gives projects a consistent starting point and lets you adapt
+instructions and checks to the way you work.
 
 ## Quick start
 
@@ -22,9 +22,8 @@ agent the task directly, for example:
 > Fix the exercise search. Follow the project conventions, add a regression
 > test where useful, and run the project checks.
 
-Use a short spec for larger or ambiguous changes. Routine fixes need no task
-folder, research report or requirement tracking. The agent can search the actual
-repository as needed.
+Give routine fixes directly to the agent, and use a short spec for larger or
+ambiguous changes. The agent can search the repository as needed.
 
 To inspect the installer first, download `install.sh` and read it before running
 it. From a development checkout, `./install.sh` also works. Installation fetches
@@ -58,7 +57,6 @@ Re-running init adds missing files and skills and merges selected stacks into th
 configuration. It does not replace existing skills with newer kit versions.
 When `AGENTS.md` already exists, add the verification command to it if appropriate.
 
-No architecture documents, specs, playbooks or task notes are created by default.
 Optional [feature spec](templates/feature-spec.md),
 [architecture overview](templates/architecture-overview.md) and
 [decision](templates/adr.md) templates are available when the project needs them.
@@ -90,8 +88,8 @@ successful build alone does not prove that tests exist or cover the task.
 **The generated script is a starting point.** Edit it to use the commands your
 project and CI actually need, especially for other languages, deeper layouts,
 external services or unusual build systems. New modules within supported layouts
-are discovered on each run; existing scripts from older kit versions are left
-untouched and need deliberate updating.
+are discovered on each run. Maintain the project-owned script as your build
+and verification needs change.
 
 `aidev validate` checks setup files, executable verification and skill links. It
 does not run builds or tests and does not certify the project's quality.
@@ -113,7 +111,7 @@ Example:
 > remains to implement.
 
 Project instructions and explicit requirements take precedence over generic
-skill defaults. Load skills when relevant; there is no mandatory phase workflow.
+skill defaults. Load skills when relevant to the task.
 
 ## Commands and updates
 
@@ -136,26 +134,12 @@ recorded in `.aidev-release.json`. Local-only tags, branches and uncommitted cha
 are not installed. Fetch failures and modified installed checkouts leave the
 active installation intact; unrelated skills are never overwritten.
 
-`aidev install-skills` remains an alias for installing the stable kit's global
-skills. Uninstall removes registered links still owned by the kit; it preserves
-project files and unrelated skills. Location overrides: `AIDEV_HOME`,
+`aidev install-skills` installs the stable kit's global skills. Uninstall removes
+registered links still owned by the kit; it preserves project files and unrelated
+skills. Location overrides: `AIDEV_HOME`,
 `AIDEV_BIN_DIR`, `XDG_DATA_HOME` and `CLAUDE_CONFIG_DIR`. Use the same overrides for
 future commands. Fork installers can set `AIDEV_REPOSITORY_URL` and
 `AIDEV_BOOTSTRAP_URL`; with a pipeline, pass them to Bash rather than curl.
-
-## Moving from the earlier task workflow
-
-`task`, `inspect` and `explain`, automatic context selection, context rules and
-RPI note generation have been removed. Give the task or spec directly to your
-agent. Existing `.ai/tasks/` notes, `.ai/context/` snapshots, copied playbooks and
-principles are not deleted or migrated automatically. Keep any useful project
-knowledge; remove obsolete process files when no longer needed.
-
-Older config fields are preserved but ignored; only `stacks` is used. In
-particular, the old `verification` field is not executed: put the desired command
-in the project-owned `.ai/verify.sh`. Update existing `AGENTS.md` or adapter files
-if they still require removed commands or phase notes. Init preserves them, so
-it cannot make that editorial decision for you.
 
 ## Development
 
