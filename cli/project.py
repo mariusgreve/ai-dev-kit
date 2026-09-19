@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from .catalog import ROOT, SUPPORTED_STACKS, DEFAULT_PLAYBOOKS, DEFAULT_PRINCIPLES, DEFAULT_TEMPLATES
+from .config import load_config
 from .detection import detect_stacks
 from .installation import ensure_skill_link
 
@@ -85,28 +86,63 @@ criterion has been checked. Deterministic checks precede AI review.
 
 
 def verify_script(stacks: set[str]) -> str:
-    blocks = ["#!/usr/bin/env bash", "set -euo pipefail", "", "repo_root=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")/..\" && pwd)\"", "cd \"$repo_root\"", "", "ran=0"]
+    blocks = [
+        "#!/usr/bin/env bash", "set -euo pipefail", "",
+        'repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"',
+        'cd "$repo_root"', "", "ran=0", "",
+        "run_check() {",
+        "  printf 'Running: %s\\n' \"$*\"",
+        '  "$@"',
+        "  ran=$((ran + 1))",
+        "}",
+    ]
     if "java" in stacks or "spring" in stacks:
         blocks += [
-            "if [[ -x ./gradlew ]]; then ./gradlew check; ran=1",
-            "elif [[ -x ./mvnw ]]; then ./mvnw verify; ran=1",
+            "", "if [[ -x ./gradlew ]]; then run_check ./gradlew check",
+            "elif [[ -x ./mvnw ]]; then run_check ./mvnw verify",
             "fi",
         ]
     if {"react", "typescript"} & stacks:
         blocks += [
-            "if [[ -f package.json ]]; then",
-            "  npm run --if-present lint",
-            "  npm run --if-present typecheck",
-            "  npm run --if-present test",
-            "  ran=1",
-            "fi",
+            "", "if [[ -f package.json ]]; then",
+            # Capture first: parse errors must fail the script, not disappear in
+            # process substitution. Only fixed, supported script names are emitted.
+            '  checks="$(python3 - <<\'PY\'',
+            "import json", "import sys", "from pathlib import Path", "",
+            "try:",
+            "    package = json.loads(Path('package.json').read_text(encoding='utf-8'))",
+            "    if not isinstance(package, dict):",
+            "        raise ValueError('must be an object')",
+            "    scripts = package.get('scripts', {})",
+            "    if not isinstance(scripts, dict):",
+            "        raise ValueError('scripts must be an object')",
+            "    for name in ('lint', 'typecheck', 'test'):",
+            "        if name not in scripts:",
+            "            continue",
+            "        if not isinstance(scripts[name], str):",
+            "            raise ValueError(f'scripts.{name} must be a string')",
+            "        if scripts[name].strip():",
+            "            print(name)",
+            "except (OSError, ValueError) as exc:",
+            "    print(f'Invalid package.json: {exc}', file=sys.stderr)",
+            "    sys.exit(1)",
+            "PY", ')"',
+            "  for check in $checks; do",
+            '    run_check npm run "$check"',
+            "  done", "fi",
         ]
-    blocks += ["", "if [[ $ran -eq 0 ]]; then", "  echo 'No build detected. Edit .ai/verify.sh for this project.' >&2", "  exit 2", "fi", ""]
+    blocks += [
+        "", "if [[ $ran -eq 0 ]]; then",
+        "  echo 'No verification checks ran. Edit .ai/verify.sh for this project.' >&2",
+        "  exit 2", "fi",
+        "printf 'Verification passed: %s check(s).\\n' \"$ran\"", "",
+    ]
     return "\n".join(blocks)
 
 
 def init(args: argparse.Namespace) -> int:
     project = Path(args.project).resolve()
+    load_config(project)  # Check existing configuration before creating project files.
     project.mkdir(parents=True, exist_ok=True)
     if args.stacks is None:
         chosen = choose_detected_stacks(project, args.yes)
@@ -153,19 +189,17 @@ def validate_project(project: Path) -> int:
     errors: list[str] = []
     if missing:
         errors.append("missing: " + ", ".join(missing))
-    config_path = project / ".ai/config.json"
-    if config_path.exists():
-        try:
-            config = json.loads(config_path.read_text(encoding="utf-8"))
-            unknown = set(config.get("stacks", [])) - set(SUPPORTED_STACKS)
-            for name in set(config.get("stacks", [])) - unknown:
-                for directory in (".agents/skills", ".claude/skills"):
-                    if not (project / directory / name / "SKILL.md").is_file():
-                        errors.append(f"skill not discoverable: {directory}/{name}; re-run aidev init")
-            if unknown:
-                errors.append("unknown stacks: " + ", ".join(sorted(unknown)))
-        except (json.JSONDecodeError, OSError) as exc:
-            errors.append(f"invalid .ai/config.json: {exc}")
+    try:
+        config = load_config(project)
+        unknown = set(config.get("stacks", [])) - set(SUPPORTED_STACKS)
+        for name in set(config.get("stacks", [])) - unknown:
+            for directory in (".agents/skills", ".claude/skills"):
+                if not (project / directory / name / "SKILL.md").is_file():
+                    errors.append(f"skill not discoverable: {directory}/{name}; re-run aidev init")
+        if unknown:
+            errors.append("unknown stacks: " + ", ".join(sorted(unknown)))
+    except ValueError as exc:
+        errors.append(str(exc))
     if errors:
         print("Validation failed:\n- " + "\n- ".join(errors), file=sys.stderr)
         return 1

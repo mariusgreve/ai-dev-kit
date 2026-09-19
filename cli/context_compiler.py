@@ -13,6 +13,9 @@ import uuid
 from collections import Counter
 from pathlib import Path
 
+from .config import load_config
+from .paths import safe_file
+
 IGNORED = {".git", ".ai", ".agents", ".claude", ".idea", ".gradle", ".venv",
            "venv", "node_modules", "build", "dist", "target", "__pycache__", "coverage"}
 STOP_WORDS = set("a an and are as at be by can for from has have in is it of on or should "
@@ -26,13 +29,6 @@ KINDS = ("files", "skills", "principles", "architecture", "instructions", "playb
 def tokens(text: str) -> set[str]:
     text = re.sub(r"([a-z])([A-Z])", r"\1 \2", text).lower()
     return {word for word in re.findall(r"[^\W_]+", text) if len(word) > 2 and word not in STOP_WORDS}
-
-
-def safe_file(root: Path, relative: str) -> Path:
-    path = root / relative
-    if Path(relative).is_absolute() or not path.resolve().is_relative_to(root.resolve()):
-        raise ValueError(f"Context path must stay inside {root}: {relative}")
-    return path
 
 
 def read_text(path: Path) -> str | None:
@@ -72,44 +68,6 @@ def inventory(project: Path) -> list[str]:
     return sorted(name for name in names if not excluded(name)
                   and (project / name).resolve().is_relative_to(project)
                   and not (project / name).is_symlink())
-
-
-def load_config(project: Path) -> dict:
-    path = safe_file(project, ".ai/config.json")
-    config = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    if not isinstance(config, dict):
-        raise ValueError(".ai/config.json must be an object")
-    for key in ("stacks", "principles", "playbooks"):
-        if key in config and (not isinstance(config[key], list)
-                              or not all(isinstance(v, str) for v in config[key])):
-            raise ValueError(f"{key} must be a list of names")
-    if "verification" in config and (not isinstance(config["verification"], str)
-                                     or not config["verification"].strip()):
-        raise ValueError("verification must be a nonempty command string")
-    context = config.get("context", {})
-    if not isinstance(context, dict):
-        raise ValueError("context must be an object")
-    for key, default in (("max_files", 20), ("max_chars", 32_000)):
-        value = context.get(key, default)
-        if type(value) is not int or value < 1:
-            raise ValueError(f"context.{key} must be a positive integer")
-        context[key] = value
-    rules = context.get("rules", [])
-    if not isinstance(rules, list):
-        raise ValueError("context.rules must be a list")
-    for rule in rules:
-        if not isinstance(rule, dict) or not rule.get("terms"):
-            raise ValueError("Each context rule needs nonempty terms")
-        for key in ("terms", "files", "skills", "principles", "architecture"):
-            values = rule.get(key, [])
-            if not isinstance(values, list) or not all(isinstance(v, str) and v for v in values):
-                raise ValueError(f"Rule {key} must be a list of nonempty strings")
-        if "playbook" in rule and not isinstance(rule["playbook"], str):
-            raise ValueError("Rule playbook must be a name")
-        for pattern in rule.get("files", []) + rule.get("architecture", []):
-            safe_file(project, pattern)
-    config["context"] = context
-    return config
 
 
 def catalog(project: Path, kit: Path, kind: str) -> dict[str, tuple[Path, str]]:

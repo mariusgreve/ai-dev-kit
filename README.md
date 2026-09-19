@@ -112,6 +112,27 @@ The generated `.ai/config.json` records the selected stacks, playbooks and princ
 generated `.ai/verify.sh` is deliberately project-local: edit it to reflect the
 real build. Agent instructions call this single verification entrypoint.
 
+Generated verification reports each command it runs and stops on the first
+failure. For npm projects it reads `package.json` and runs only explicitly defined,
+nonempty `lint`, `typecheck` and `test` scripts. Missing or empty scripts do not
+count as checks. If no check runs across the selected stacks, verification exits
+with status 2 instead of reporting success. Malformed package metadata fails
+with an error. The generated npm check discovery uses Python 3, already required
+by aidev; running the checks still requires npm and the project's dependencies.
+A successful command is execution evidence, not proof that its script contains
+meaningful assertions; maintain project-owned checks accordingly.
+
+Existing `.ai/verify.sh` files remain untouched by `init`. To adopt this behavior
+in a previously initialized project, deliberately update its verification script
+while preserving any project-specific checks.
+
+`init`, `validate`, `task`, `inspect` and `explain` share configuration shape
+validation, including positive context limits and correctly typed rules. Invalid
+configuration produces an error naming `.ai/config.json`; `init` checks it before
+creating files. Task previews still support projects without configuration, while
+`validate` additionally checks that the project harness and skill links exist.
+Older configurations without a `context` section use defaults without being rewritten.
+
 ## Task context and RPI
 
 Run these commands in the project you want to change, or pass `--project /path/to/project`:
@@ -240,6 +261,8 @@ The CLI uses the Python standard library and keeps responsibilities separate:
 - `cli/tasks.py`: task previews, handoff files and agent execution.
 - `cli/context_compiler.py`: context selection and RPI handoff rendering.
 - `cli/catalog.py`: shared content names and kit location.
+- `cli/config.py`: common configuration validation and defaults.
+- `cli/paths.py`: shared checks that paths stay inside the project.
 
 `cli` is a regular Python package. Both `./aidev` and `python3 cli/aidev.py`
 remain supported. The installer downloads `cli/installation.py` alone before
