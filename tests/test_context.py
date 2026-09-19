@@ -1,4 +1,5 @@
 import json
+import hashlib
 from pathlib import Path
 import subprocess
 import sys
@@ -7,7 +8,7 @@ import unittest
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-from cli.context_compiler import compile_context, save_task
+from cli.context_compiler import compile_context, render, save_task
 
 
 class ContextTest(unittest.TestCase):
@@ -108,6 +109,71 @@ class ContextTest(unittest.TestCase):
         self.assertLessEqual(len(context["selected"]["files"]), 1)
         self.assertTrue(any(item["truncated"] for item in items))
         self.assertTrue(context["warnings"])
+
+    def test_large_guidance_cannot_crowd_out_late_implementation_match(self):
+        self.write("AGENTS.md", "Project constraints.\n" * 1000)
+        self.write("architecture/overview.md", "Architecture detail.\n" * 1000)
+        content = "// unrelated preamble\n" * 150 + "void passwordReset() { sendEmail(); }\n" + "// trailing detail\n" * 150
+        self.write("src/ResetService.java", content)
+        self.config({"context": {"max_chars": 800}})
+        context = self.compile()
+        item = next(item for item in context["selected"]["files"] if item["path"] == "src/ResetService.java")
+        self.assertIn("passwordReset", item["content"])
+        self.assertGreater(item["excerpt"]["start_line"], 1)
+        self.assertEqual(item["sha256"], hashlib.sha256(content.encode()).hexdigest())
+        self.assertEqual(context["budget"]["by_kind"]["files"], 400)
+        self.assertTrue(context["selected"]["instructions"][0]["content"])
+        self.assertLessEqual(context["budget"]["used_chars"], 800)
+        self.assertEqual(context, self.compile())
+        self.assertIn("Source excerpt:", render(context))
+        self.assertIn("Source excerpt:", render(context, include_content=False))
+
+    def test_selected_files_share_space_and_excerpts_reference_exact_source_slices(self):
+        self.write("src/ResetHandler.java", "// λø unrelated\n" * 100 + "password reset handler\n" + "// tail\n" * 100)
+        self.write("src/ResetService.java", "// preamble\n" * 100 + "password reset service\n" + "// tail\n" * 100)
+        self.config({"context": {"max_chars": 1200}})
+        context = self.compile()
+        for item in context["selected"]["files"]:
+            content = (self.project / item["path"]).read_text()
+            span = item["excerpt"]
+            self.assertIn("password reset", item["content"])
+            self.assertEqual(item["content"], content[span["start_offset"]:span["end_offset"]])
+            self.assertEqual(span["start_line"], content.count("\n", 0, span["start_offset"]) + 1)
+            self.assertEqual(span["end_line"], content.count("\n", 0, span["end_offset"] - 1) + 1)
+            self.assertGreater(len(item["content"]), 200)
+
+    def test_long_single_line_excerpt_contains_match_and_column_locations(self):
+        content = "x" * 3000 + " password reset " + "x" * 3000
+        self.write("src/ResetService.java", content)
+        self.config({"context": {"max_chars": 400}})
+        context = self.compile()
+        item = context["selected"]["files"][0]
+        self.assertIn("password reset", item["content"])
+        span = item["excerpt"]
+        self.assertEqual(span["start_line"], 1)
+        self.assertEqual(span["end_line"], 1)
+        self.assertGreater(span["start_column"], 1)
+        self.assertEqual(item["content"], content[span["start_column"] - 1:span["end_column"]])
+
+    def test_richer_match_wins_over_earlier_partial_match(self):
+        self.write("src/ResetService.java", "// password\n" + "// unrelated\n" * 100
+                   + "// password reset\n" + "// tail\n" * 100)
+        self.config({"context": {"max_chars": 300}})
+        item = self.compile()["selected"]["files"][0]
+        self.assertIn("password reset", item["content"])
+        self.assertGreater(item["excerpt"]["start_line"], 1)
+
+    def test_rule_only_file_uses_prefix_and_full_spec_stays_outside_excerpt_budget(self):
+        self.write("specs/reset.md", "# Password reset\n" + "- Preserve compatibility.\n" * 50)
+        self.write("src/Unrelated.java", "class Invoice {}\n" * 100)
+        self.config({"context": {"max_chars": 100, "max_files": 1,
+                     "rules": [{"terms": ["password"], "files": ["src/Unrelated.java"]}]}})
+        context = self.compile(spec="specs/reset.md")
+        item = context["selected"]["files"][0]
+        self.assertEqual(item["excerpt"]["start_offset"], 0)
+        self.assertTrue(item["content"].startswith("class Invoice"))
+        self.assertEqual(context["spec"]["content"], (self.project / "specs/reset.md").read_text())
+        self.assertLessEqual(context["budget"]["used_chars"], 100)
 
     def test_changes_refresh_model_without_reusing_stale_context(self):
         first = self.compile()

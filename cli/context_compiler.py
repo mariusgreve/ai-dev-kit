@@ -14,6 +14,7 @@ from collections import Counter
 from pathlib import Path
 
 from .config import load_config
+from .excerpts import apply_budget
 from .paths import safe_file
 
 IGNORED = {".git", ".ai", ".agents", ".claude", ".idea", ".gradle", ".venv",
@@ -29,6 +30,20 @@ KINDS = ("files", "skills", "principles", "architecture", "instructions", "playb
 def tokens(text: str) -> set[str]:
     text = re.sub(r"([a-z])([A-Z])", r"\1 \2", text).lower()
     return {word for word in re.findall(r"[^\W_]+", text) if len(word) > 2 and word not in STOP_WORDS}
+
+
+def match_anchor(content: str, query: set[str]) -> int | None:
+    """Locate the first term on the line matching the most distinct task terms."""
+    best_score, best_anchor, offset = 0, None, 0
+    for line in content.splitlines(keepends=True):
+        overlap = tokens(line) & query
+        if len(overlap) > best_score:
+            positions = [match.start() for term in sorted(overlap)
+                         if (match := re.search(re.escape(term), line, re.IGNORECASE))]
+            if positions:
+                best_score, best_anchor = len(overlap), offset + min(positions)
+        offset += len(line)
+    return best_anchor
 
 
 def read_text(path: Path) -> str | None:
@@ -242,14 +257,8 @@ def compile_context(project: Path, kit: Path, description: str, spec_path: str |
             add("skills", path, source, "selected stack manifest")
         elif len(query & description_terms) >= 2:
             add("skills", path, source, "skill description matches: " + ", ".join(sorted(query & description_terms)))
-    # Budget excerpts, never pretend omitted content was read. Metadata always survives.
-    remaining = settings["max_chars"]
-    for kind in ("instructions", "playbook", "principles", "architecture", "skills", "files"):
-        for item in selected[kind]:
-            content = item["content"]
-            item["content"] = content[:remaining]
-            item["truncated"] = len(content) > remaining
-            remaining -= len(item["content"])
+    anchors = [match_anchor(item["content"], query) for item in selected["files"]]
+    budget = apply_budget(selected, settings["max_chars"], anchors)
     if any(item["truncated"] for group in selected.values() for item in group):
         warnings.append("Context excerpt budget reached; open referenced originals before editing")
     if not selected["files"]:
@@ -260,7 +269,7 @@ def compile_context(project: Path, kit: Path, description: str, spec_path: str |
     return {"schema_version": 1, "project": str(project), "kit": str(kit.resolve()), "description": description.strip(),
             "workflow": "rpi", "mode": "sdd" if spec else "task", "playbook": playbook,
             "verification": config.get("verification", "./.ai/verify.sh"),
-            "spec": spec, "selected": selected, "warnings": warnings, "project_model": model}
+            "spec": spec, "selected": selected, "budget": budget, "warnings": warnings, "project_model": model}
 
 
 def render(context: dict, include_content: bool = True) -> str:
@@ -269,6 +278,11 @@ def render(context: dict, include_content: bool = True) -> str:
              f"Project root: {context['project']}. Kit guidance root: {context['kit']}.", "",
              "Selection is a starting hypothesis, not an exhaustive impact analysis.",
              "Spec defines intent; repository evidence defines current behavior. Resolve conflicts explicitly.", ""]
+    if "budget" in context:
+        budget = context["budget"]
+        lines += [f"Excerpt budget: {budget['used_chars']}/{budget['max_chars']} characters; "
+                  f"files: {budget['by_kind']['files']}; guidance: "
+                  f"{budget['used_chars'] - budget['by_kind']['files']}.", ""]
     if context["spec"]:
         spec = context["spec"]
         lines += [f"## Spec: {spec['path']}", "", spec["content"], "", "## Traceability", "",
@@ -281,6 +295,10 @@ def render(context: dict, include_content: bool = True) -> str:
         lines += ["", f"## {kind.title()}", ""]
         for item in items:
             lines += [f"### {item['source']}:{item['path']}", "; ".join(item["reasons"])]
+            span = item.get("excerpt")
+            if span and item["truncated"]:
+                lines += [f"Source excerpt: {span['start_line']}:{span['start_column']}–"
+                          f"{span['end_line']}:{span['end_column']} (line:column, inclusive)."]
             if include_content:
                 lines += ["", item["content"]]
             if item["truncated"]:

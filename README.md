@@ -221,9 +221,28 @@ warnings. Conflicting rule playbooks require `--playbook`. The existing
 
 `max_files` bounds selected ordinary files; explicit rules exceeding it fail
 rather than silently dropping requested files. `max_chars` bounds combined
-guidance/source excerpts, prioritizing instructions and workflow guidance;
-the full explicit spec is separate. Truncated excerpts are marked and original
-paths and hashes remain available. Inventory is limited to 20,000 candidate
+guidance/source excerpts; the full explicit spec is separate. Half of this
+budget is reserved for selected files, and either files or guidance can reuse
+space the other does not need. Selected files share their allocation, so one
+large file cannot consume all of it. Within guidance, governing instructions
+and the playbook take priority; principles, architecture and skills share the
+remaining guidance space.
+
+When a selected file needs truncation, the compiler chooses a contiguous
+excerpt around the first term on the line matching the most distinct task/spec
+terms. Ties prefer the earlier line. Files chosen only by path or rule, with no
+content match, retain a prefix excerpt. Guidance stays in its original order.
+Selection remains lexical; the excerpt is not guaranteed to contain a complete
+function or every relevant match. Open the original when more context is needed.
+
+Truncated excerpts show source line and column references in `inspect`,
+`explain` and task handoffs. JSON retains the full-file hash and `original_chars`,
+and adds `excerpt` locations: one-based inclusive lines/columns, plus zero-based
+character offsets with an exclusive `end_offset`. An omitted or empty excerpt
+has `excerpt: null`. The `budget` summary reports actual characters used by
+category. The bound covers excerpt bodies, not metadata, headings or the full
+explicit spec. Very small budgets can still omit content; truncation warnings
+and original paths remain visible. Inventory is limited to 20,000 candidate
 files; use a narrower project root for larger repositories.
 
 `task` saves the observed file hashes, architecture paths and stack evidence in
@@ -260,6 +279,7 @@ The CLI uses the Python standard library and keeps responsibilities separate:
 - `cli/detection.py`: stack detection and supporting evidence.
 - `cli/tasks.py`: task previews, handoff files and agent execution.
 - `cli/context_compiler.py`: context selection and RPI handoff rendering.
+- `cli/excerpts.py`: context budget allocation and source excerpt locations.
 - `cli/catalog.py`: shared content names and kit location.
 - `cli/config.py`: common configuration validation and defaults.
 - `cli/paths.py`: shared checks that paths stay inside the project.
