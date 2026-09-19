@@ -50,13 +50,11 @@ Create the smallest usable foundation matching the new project's identity and re
 
 ## Integrate with AI Dev Kit
 
-If the kit is available, read its current README, CLI and generated configuration before using it. Follow project-owned specs and architecture over generic kit defaults. Use only supported detected stack skills; do not force an unsupported stack into the CLI's stack list.
+If the kit is available, use `aidev init <destination> --yes` for project instructions, relevant stack skills and a project-owned verification script. It does not generate the application. Unsupported stacks can use the base instructions with custom checks.
 
-The inspected v0.1.0 kit supports `aidev init <destination> --stacks ...` for a project harness, not application generation, and only copies named stack skills. Do not pass `bootstrap-from-reference` as a stack or claim init automatically installs this task skill. Keep the canonical skill at `skills/bootstrap-from-reference/` in the kit, or use the installed skill directly. If a project-local copy is useful, copy the entire skill directory, including references, to `.ai/skills/bootstrap-from-reference/` and reference it in project instructions.
+Reuse existing project documentation. Record the reference identity, reuse decisions and important deviations in a short architecture note; keep requirements in the project's existing location. Create additional documents only when they help explain or maintain the scaffold.
 
-Reuse and fill existing project documentation instead of generating duplicate documents. For this kit, put evidence, source identity (commit if available; otherwise archive/version or content fingerprint), reuse decisions and deviations in `architecture/reference-analysis.md`, the resulting architecture in `architecture/overview.md`, and the requirements with scaffold/full-product scope in `specs/features/<project>.md`.
-
-Set `.ai/verify.sh` to the actual detected package manager and real checks, including build. The v0.1.0 generated frontend script uses npm and optional scripts; it is not sufficient evidence that another package manager's checks passed. Do not use silent missing-script success as verification. Keep normal project tooling usable without the kit.
+Review `.ai/verify.sh` against the actual build and package manager. Run it and include build/startup checks needed by this scaffold. Existing verification scripts are preserved by init and may need manual updates.
 
 ## Verify and hand off
 
