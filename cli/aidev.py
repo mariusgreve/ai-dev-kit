@@ -267,6 +267,8 @@ Before changing code:
 - inspect affected architecture and existing conventions
 - load only the skills needed for the task
 - use the matching playbook under `.ai/playbooks/`
+- use `aidev inspect "<task>"` or `aidev task --spec <path>` for an RPI context handoff
+- treat selected context as a starting point; confirm affected paths during Research
 
 Prefer the smallest coherent change. Delegate only when context isolation,
 parallel work, or genuine specialization provides a clear benefit.
@@ -313,6 +315,7 @@ def init(args: argparse.Namespace) -> int:
         "playbooks": list(DEFAULT_PLAYBOOKS),
         "principles": list(DEFAULT_PRINCIPLES),
         "verification": "./.ai/verify.sh",
+        "context": {"max_files": 20, "max_chars": 32000, "rules": []},
     }
     outputs = [
         write_new(project / "AGENTS.md", project_agents()),
@@ -391,6 +394,34 @@ def uninstall_kit(yes: bool) -> int:
     return 0
 
 
+def task_command(args: argparse.Namespace) -> int:
+    # install.sh downloads this file alone for bootstrap installation.
+    # Load the compiler only for task commands in the installed/full checkout.
+    sys.path.insert(0, str(ROOT / "cli"))
+    from context_compiler import compile_context, render, save_task
+
+    project = Path(args.project).resolve()
+    context = compile_context(project, ROOT, args.description, args.spec,
+                              detect_stacks(project), args.playbook)
+    if args.command != "task":
+        if args.json:
+            print(json.dumps(context, indent=2))
+        else:
+            print(render(context, include_content=args.command == "inspect"), end="")
+        return 0
+    directory = save_task(context, project)
+    print(f"Task prepared: {directory / 'task.md'}", flush=True)
+    print("RPI notes: research.md → plan.md → implementation.md", flush=True)
+    if args.agent:
+        prompt = (f"Work in {project}. Start the RPI workflow described in "
+                  f"{directory / 'task.md'}. Keep phase notes in {directory}.\n\n"
+                  + render(context))
+        # The caller chooses an executable accepting a prompt on stdin. Never use a shell.
+        return subprocess.run(args.agent, input=prompt, text=True, cwd=project).returncode
+    print("Give task.md to your coding agent, or pass --agent COMMAND [ARG ...] to start it.")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="aidev")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -406,7 +437,26 @@ def main() -> int:
     sub.add_parser("update", help="install the latest stable version tag, falling back to origin/main")
     p_uninstall = sub.add_parser("uninstall", help="remove an installation created by install.sh")
     p_uninstall.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
+    for name in ("task", "inspect", "explain"):
+        command = sub.add_parser(name, help={
+            "task": "compile task context and prepare an RPI handoff",
+            "inspect": "preview task context without writing files",
+            "explain": "explain context selection without writing files",
+        }[name])
+        command.add_argument("description", nargs="?", default="")
+        command.add_argument("--project", default=".", help="project root (default: current directory)")
+        command.add_argument("--spec", help="spec path, relative to the project root")
+        command.add_argument("--playbook", help="override automatic playbook selection")
+        if name == "task":
+            command.add_argument("--agent", nargs=argparse.REMAINDER,
+                                 help="executable and arguments receiving the handoff on stdin; must be last")
+        else:
+            command.add_argument("--json", action="store_true", help="emit structured context and selection reasons")
     args = parser.parse_args()
+    if args.command in {"task", "inspect", "explain"}:
+        if args.command == "task" and args.agent == []:
+            raise ValueError("--agent requires an executable")
+        return task_command(args)
     if args.command == "init":
         return init(args)
     if args.command == "validate":

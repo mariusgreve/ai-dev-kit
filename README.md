@@ -7,7 +7,7 @@ Copilot.
 
 ## Quick start
 
-Requires Git and Python 3; standalone installation also requires curl.
+Requires Git and Python 3.10+; standalone installation also requires curl.
 No initial repository clone is needed:
 
 ```bash
@@ -92,6 +92,7 @@ commands.
 - `skills/`: reusable, task-oriented capabilities loaded only when relevant.
 - `playbooks/`: end-to-end workflows that can compose several skills.
 - `principles/`: general engineering defaults, overridden by project decisions.
+- `cli/context_compiler.py`: local context selection and agent-neutral RPI handoffs.
 - `templates/`: project-owned specs, acceptance criteria and ADRs.
 - `adapters/`: mappings from the neutral core to tool-specific instruction files.
 - project `architecture/` and `specs/`: facts and intent that stay in the project.
@@ -110,6 +111,129 @@ principle. More specific, explicit guidance wins.
 The generated `.ai/config.json` records the selected stacks, playbooks and principles. The
 generated `.ai/verify.sh` is deliberately project-local: edit it to reflect the
 real build. Agent instructions call this single verification entrypoint.
+
+## Task context and RPI
+
+Run these commands in the project you want to change, or pass `--project /path/to/project`:
+
+```bash
+aidev inspect "Implement password reset"
+aidev explain "Implement password reset"
+aidev task "Implement password reset"
+aidev task --spec specs/features/password-reset.md
+```
+
+`inspect` previews selected files and guidance, with bounded content excerpts.
+`explain` shows selection reasons without guidance excerpts. Both are read-only;
+`--json` returns the same structured context, including reasons, hashes, selection
+limits and project inventory. `task` uses the same compiler and writes a unique
+`.ai/tasks/<id>/` directory containing:
+
+- `task.md`: task, spec, selected context and Research → Plan → Implement handoff.
+- `context.json`: the structured selection and project snapshot.
+- `research.md`, `plan.md`, `implementation.md`: pending notes for the agent to fill.
+
+Give `task.md` to your coding agent. To start an agent directly, append
+`--agent COMMAND [ARG ...]`; the command must accept its prompt on standard input.
+For example, with your own agent wrapper:
+
+```bash
+aidev task --spec specs/features/password-reset.md --agent ./scripts/coding-agent
+```
+
+All aidev options must precede `--agent`. The executable receives the handoff on
+stdin, runs in the project directory without shell interpolation, inherits the
+terminal output, and returns its exit status. Without `--agent`, `task` prepares
+the workflow for handoff; it does not claim research, implementation or tests
+have run. Existing playbooks still govern the work. Feature tasks use
+`implement-feature`; explicit review and bug-fix task wording selects
+`review-change` and `fix-bug`. Override with `--playbook NAME`.
+
+### Selection and project customization
+
+The compiler scores task/spec terms against file paths and bounded text content,
+weighting path matches and uncommon terms. It reads tracked and non-ignored
+untracked files with Git; a directory walk supports projects outside Git.
+Dependency/build folders, hidden files (except `.github`), private-key extensions,
+common lockfiles, binary/non-UTF-8 files, external symlinks and files above
+128 KB are excluded. Project `AGENTS.md` instructions governing selected paths
+are included even when Git-ignored. Specs are explicit inputs and must be
+nonempty UTF-8 files inside the project, at most 128 KB.
+
+Architecture comes from `architecture/` and `docs/architecture/`: overviews are
+always selected, other documents match the task. Configured principles form the
+engineering baseline. Skills match task names/descriptions or selected file
+languages plus stack evidence. Custom stacks and domain relationships can be
+expressed through rules; no framework-specific domain map is required.
+
+Project `.ai/skills/`, `.ai/principles/` and `.ai/playbooks/` entries override kit
+entries of the same name. Custom entries in those directories are also eligible.
+Automatic discovery does not read arbitrary global agent skill directories.
+Existing `.ai/config.json` files work without migration. Add an optional
+`context` section to tune selection:
+
+```json
+{
+  "context": {
+    "max_files": 20,
+    "max_chars": 32000,
+    "rules": [
+      {
+        "terms": ["password reset", "authentication"],
+        "files": ["backend/auth/*", "frontend/login/*"],
+        "skills": ["spring", "react"],
+        "principles": ["security"],
+        "architecture": ["architecture/authentication.md"],
+        "playbook": "implement-feature"
+      }
+    ]
+  }
+}
+```
+
+A rule matches when all significant words in any one of its `terms` appear in
+the task or spec. File patterns use case-sensitive `fnmatch` matching against
+project-relative paths (`*` can span `/`). Rules add selections before ranked
+files. Referenced guidance names must exist; unmatched file patterns generate
+warnings. Conflicting rule playbooks require `--playbook`. The existing
+`playbooks` configuration, when present, restricts allowed selections.
+
+`max_files` bounds selected ordinary files; explicit rules exceeding it fail
+rather than silently dropping requested files. `max_chars` bounds combined
+guidance/source excerpts, prioritizing instructions and workflow guidance;
+the full explicit spec is separate. Truncated excerpts are marked and original
+paths and hashes remain available. Inventory is limited to 20,000 candidate
+files; use a narrower project root for larger repositories.
+
+`task` saves the observed file hashes, architecture paths and stack evidence in
+`.ai/context/project-model.json`. Each command scans current files again, so
+changes and deletions cannot silently reuse stale context. The model is an
+auditable snapshot, not a semantic dependency graph. Selection is heuristic:
+Research must confirm affected call paths and load additional context as needed.
+Re-run `inspect` between phases to refresh the view without overwriting notes.
+Choose whether to commit task notes; `.ai/tasks/` and `.ai/context/` can be added
+to the project's `.gitignore` when they should remain local.
+
+### Spec-driven development
+
+`--spec` includes the full spec as intent and marks the RPI handoff as SDD.
+Explicit `REQ-*` identifiers are preserved. Bullet/numbered items without IDs
+receive source-line references (`SPEC-L12`) for review; these are candidates,
+not an assertion that all bullets are requirements. Prose-only specs remain
+intact, and Research must extract their acceptance criteria. Line references
+change if the spec is edited; explicit requirement IDs are preferable.
+
+Research confirms requirements against current repository behavior. Plan maps
+each requirement to implementation steps and proof. Implement records changed
+files and actual verification evidence, using `.ai/config.json`'s `verification`
+command (default `./.ai/verify.sh`). Generated requirement statuses stay
+`unverified` until the agent supplies evidence; compilation never marks them done.
+
+## Development checks
+
+```bash
+python3 -m unittest discover -s tests
+```
 
 ## Versioning
 
