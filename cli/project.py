@@ -85,59 +85,14 @@ criterion has been checked. Deterministic checks precede AI review.
 """
 
 
-def verify_script(stacks: set[str]) -> str:
-    blocks = [
-        "#!/usr/bin/env bash", "set -euo pipefail", "",
-        'repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"',
-        'cd "$repo_root"', "", "ran=0", "",
-        "run_check() {",
-        "  printf 'Running: %s\\n' \"$*\"",
-        '  "$@"',
-        "  ran=$((ran + 1))",
-        "}",
-    ]
-    if "java" in stacks or "spring" in stacks:
-        blocks += [
-            "", "if [[ -x ./gradlew ]]; then run_check ./gradlew check",
-            "elif [[ -x ./mvnw ]]; then run_check ./mvnw verify",
-            "fi",
-        ]
-    if {"react", "typescript"} & stacks:
-        blocks += [
-            "", "if [[ -f package.json ]]; then",
-            # Capture first: parse errors must fail the script, not disappear in
-            # process substitution. Only fixed, supported script names are emitted.
-            '  checks="$(python3 - <<\'PY\'',
-            "import json", "import sys", "from pathlib import Path", "",
-            "try:",
-            "    package = json.loads(Path('package.json').read_text(encoding='utf-8'))",
-            "    if not isinstance(package, dict):",
-            "        raise ValueError('must be an object')",
-            "    scripts = package.get('scripts', {})",
-            "    if not isinstance(scripts, dict):",
-            "        raise ValueError('scripts must be an object')",
-            "    for name in ('lint', 'typecheck', 'test'):",
-            "        if name not in scripts:",
-            "            continue",
-            "        if not isinstance(scripts[name], str):",
-            "            raise ValueError(f'scripts.{name} must be a string')",
-            "        if scripts[name].strip():",
-            "            print(name)",
-            "except (OSError, ValueError) as exc:",
-            "    print(f'Invalid package.json: {exc}', file=sys.stderr)",
-            "    sys.exit(1)",
-            "PY", ')"',
-            "  for check in $checks; do",
-            '    run_check npm run "$check"',
-            "  done", "fi",
-        ]
-    blocks += [
-        "", "if [[ $ran -eq 0 ]]; then",
-        "  echo 'No verification checks ran. Edit .ai/verify.sh for this project.' >&2",
-        "  exit 2", "fi",
-        "printf 'Verification passed: %s check(s).\\n' \"$ran\"", "",
-    ]
-    return "\n".join(blocks)
+def verify_script() -> str:
+    runner = (ROOT / "cli/verification.py").read_text(encoding="utf-8")
+    return ('#!/usr/bin/env bash\n'
+            '# Project-owned checks. Edit this file to match your build and CI.\n'
+            'set -euo pipefail\n'
+            'cd "$(dirname "${BASH_SOURCE[0]}")/.."\n'
+            "export CI=true\n"
+            "python3 - <<'AIDEV_VERIFY_PY'\n" + runner + "AIDEV_VERIFY_PY\n")
 
 
 def init(args: argparse.Namespace) -> int:
@@ -162,7 +117,7 @@ def init(args: argparse.Namespace) -> int:
     outputs = [
         write_new(project / "AGENTS.md", project_agents()),
         write_new(project / ".ai/config.json", json.dumps(config, indent=2) + "\n"),
-        write_new(project / ".ai/verify.sh", verify_script(stacks), executable=True),
+        write_new(project / ".ai/verify.sh", verify_script(), executable=True),
         write_new(project / "architecture/overview.md", read("templates/architecture-overview.md")),
         write_new(project / "architecture/decisions/.gitkeep", ""),
         write_new(project / "specs/features/.gitkeep", ""),
