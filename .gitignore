@@ -4,3 +4,4 @@ __pycache__/
 .aidev-install
 .aidev-skill-links.json
 .aidev-release.json
+.vscode/settings.json
