@@ -10,94 +10,71 @@ someone reading the history later.
 
 ## Establish context
 
-- Inspect repository guidance such as `CONTRIBUTING.md` and recent commit
-  subjects before choosing a format. Explicit project conventions win.
-- When repository access is available, base the message on the staged diff and
-  relevant status. If nothing is staged, state that and use the working-tree
-  diff only when it matches the user's request.
-- Never stage files, amend history, create a commit or push unless the user
-  explicitly asks for that action.
-- Do not claim behavior, motivation or verification that is not supported by
-  the changes or supplied context. Ask only when missing intent would materially
-  change the message.
+- Check `CONTRIBUTING.md` and recent commit subjects; explicit project
+  conventions win over the defaults below.
+- Base the message on the staged diff (or working-tree diff if nothing is
+  staged and that matches the request).
+- Never stage, amend, commit or push unless the user explicitly asks for it.
+- Don't claim behavior, motivation or verification not supported by the diff.
+- If the diff contains unrelated changes, recommend separate commits instead
+  of one broad message.
 
 ## Write the subject
 
-- Use the imperative mood: `Add`, `Fix`, `Remove`, `Refactor`, not `Added`,
-  `Fixes` or `Adding`.
-- Check that it completes: "If applied, this commit will _<subject>_."
-- Make it specific enough to distinguish the change in a log.
-- Aim for 50 characters. Prefer clarity over awkward abbreviation when a few
-  extra characters are necessary.
-- Start with a capital letter and omit the final period unless the repository's
-  established format requires otherwise.
-- Avoid vague subjects such as `Update files`, `Various fixes` and `WIP`.
+- Imperative mood: `Add`, `Fix`, `Refactor` — not `Added`/`Fixes`/`Adding`.
+- Completes: "If applied, this commit will _<subject>_."
+- Aim for 50 characters, capitalized, no trailing period, specific enough to
+  distinguish the change in a log (avoid `Update files`, `WIP`).
 
 ## Add a body by default
 
-Default to including a body unless the change is truly trivial (a typo fix, a
-one-line config tweak, a dependency bump with no behavior change). Separate the
-body from the subject with a blank line and physically wrap each prose line at
-72 characters or fewer. A terminal or editor may visually wrap long lines
-without adding newline characters; that does not satisfy this requirement.
-When presenting a message, use a formatter or manually insert newlines, then
-verify the stored lines are no longer than 72 characters. Explain:
+Include a body unless the change is trivial (typo, one-line config tweak,
+version bump). Separate it from the subject with a blank line and explain
+what changed, why, and any trade-offs — not implementation details the diff
+already shows. Put trailers (`Fixes #123`, etc.) after the body.
 
-- what changed at a useful level;
-- why the change was needed, including the bug or motivating scenario;
-- relevant constraints, trade-offs or behavior changes.
+Wrap prose at 72 characters using a tool, never by eye — manual wrapping is
+the most common source of oversized lines:
 
-Do not narrate implementation details that the diff already makes obvious.
-Place issue references, breaking-change notices or other trailers after the
-body when appropriate.
+```sh
+fmt -w 72 <<'EOF'
+Prose paragraph as one long unwrapped block; fmt decides line breaks.
+EOF
+```
 
-If the diff contains unrelated changes, recommend separate commits and propose
-a message for each instead of hiding them under a broad subject.
+Leave bullets, code blocks and trailers out of the piped text and check
+those lines individually.
 
 ## Respect repository formats
 
-Use Conventional Commits, ticket prefixes, lowercase subjects or another
-structured format only when requested or already established by the project.
-Keep the description imperative within that format, for example:
+Use Conventional Commits, ticket prefixes or another structured format only
+when requested or already established, e.g. `feat(cli): detect stacks before
+initialization`. Don't introduce a new taxonomy unprompted.
 
-```text
-feat(cli): detect stacks before initialization
+## Commit safely and verify
+
+When actually running `git commit`, never embed a literal `\n` inside a
+plain quoted `-m` string — shells pass it through as `\` + `n`, not a
+newline, so the message won't split. Use multiple `-m` flags, an ANSI-C
+quoted string (`$'Subject\n\nBody'`), or `-F <file>` with real line breaks.
+
+Before and after committing, verify line lengths with a command instead of
+eyeballing:
+
+```sh
+git log -1 --format=%B | awk '{ print length, $0 }' | sort -rn | head -1
 ```
 
-Do not introduce a new commit taxonomy as part of an unrelated request.
+Any prose line over 72 characters (subject over 50) must be re-wrapped with
+`fmt -w 72` and re-verified, not manually re-split.
 
 ## Present the result
 
-Return one ready-to-copy message in a fenced text block. Only omit the body
-when the change is trivial enough that the subject fully explains it. Add a
-short note only when there is an important uncertainty, convention conflict or
-recommended commit split.
-
-## Split lines correctly when committing
-
-If asked to run the commit, never pass a message containing a literal `\n`
-escape sequence inside a single-quoted or plain double-quoted string (for
-example `git commit -m "Subject\n\nBody"`); most shells pass that through as
-the two characters `\` and `n` instead of a newline, so the message is not
-split at all. Use one of these instead:
-
-- Multiple `-m` flags, one per paragraph: `git commit -m "Subject" -m "Body
-  line one" -m "Body line two"`. Each flag becomes its own paragraph separated
-  by a blank line.
-- A real newline inside the quotes by pressing Enter in the shell, or an
-  ANSI-C quoted string so the shell itself expands the escape:
-  `git commit -m $'Subject\n\nBody line one\nBody line two'`.
-- A heredoc or temporary file passed via `-F`/`--file` when the message is
-  long: write the message to a file with actual line breaks, then run
-  `git commit -F <file>`.
-
-Whichever method is used, verify the result with `git log -1 --format=%B` (or
-`--stat`) to confirm the body renders as separate lines rather than a single
-line containing `\n`.
-
-When reviewing an existing message, identify the material problem briefly and
-then provide the improved ready-to-copy version.
+Return one ready-to-copy message in a fenced text block, omitting the body
+only when the subject fully explains a trivial change. When reviewing an
+existing message, name the problem briefly, then give the improved version.
 
 This guidance is based on Chris Beams' article
 [How to Write a Git Commit Message](https://cbea.ms/git-commit/), adapted to
 defer to repository-specific conventions.
+
