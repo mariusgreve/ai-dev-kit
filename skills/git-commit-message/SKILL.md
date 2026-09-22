@@ -37,8 +37,11 @@ someone reading the history later.
 
 Default to including a body unless the change is truly trivial (a typo fix, a
 one-line config tweak, a dependency bump with no behavior change). Separate the
-body from the subject with a blank line and wrap prose at about 72 characters.
-Explain:
+body from the subject with a blank line and physically wrap each prose line at
+72 characters or fewer. A terminal or editor may visually wrap long lines
+without adding newline characters; that does not satisfy this requirement.
+When presenting a message, use a formatter or manually insert newlines, then
+verify the stored lines are no longer than 72 characters. Explain:
 
 - what changed at a useful level;
 - why the change was needed, including the bug or motivating scenario;
