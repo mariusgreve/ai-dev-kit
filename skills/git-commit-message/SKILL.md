@@ -73,6 +73,28 @@ when the change is trivial enough that the subject fully explains it. Add a
 short note only when there is an important uncertainty, convention conflict or
 recommended commit split.
 
+## Split lines correctly when committing
+
+If asked to run the commit, never pass a message containing a literal `\n`
+escape sequence inside a single-quoted or plain double-quoted string (for
+example `git commit -m "Subject\n\nBody"`); most shells pass that through as
+the two characters `\` and `n` instead of a newline, so the message is not
+split at all. Use one of these instead:
+
+- Multiple `-m` flags, one per paragraph: `git commit -m "Subject" -m "Body
+  line one" -m "Body line two"`. Each flag becomes its own paragraph separated
+  by a blank line.
+- A real newline inside the quotes by pressing Enter in the shell, or an
+  ANSI-C quoted string so the shell itself expands the escape:
+  `git commit -m $'Subject\n\nBody line one\nBody line two'`.
+- A heredoc or temporary file passed via `-F`/`--file` when the message is
+  long: write the message to a file with actual line breaks, then run
+  `git commit -F <file>`.
+
+Whichever method is used, verify the result with `git log -1 --format=%B` (or
+`--stat`) to confirm the body renders as separate lines rather than a single
+line containing `\n`.
+
 When reviewing an existing message, identify the material problem briefly and
 then provide the improved ready-to-copy version.
 
