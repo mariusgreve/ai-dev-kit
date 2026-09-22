@@ -19,6 +19,8 @@ class CliTest(unittest.TestCase):
                                   cwd=REPO, text=True, capture_output=True)
         self.assertEqual(expected.returncode, 0, expected.stderr)
         self.assertIn("Stacks: java, spring, postgres, react, typescript", expected.stdout)
+        self.assertIn("Task skills: bootstrap-from-reference, git-commit", expected.stdout)
+        self.assertNotIn("git-commit-message", expected.stdout)
         with tempfile.TemporaryDirectory() as directory:
             for entry in (REPO / "aidev", REPO / "cli/aidev.py"):
                 with self.subTest(entry=entry):

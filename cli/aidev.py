@@ -46,7 +46,7 @@ def main() -> int:
     if args.command == "uninstall":
         return installation.uninstall_kit(args.yes)
     print("Stacks: " + ", ".join(SUPPORTED_STACKS))
-    print("Task skills: bootstrap-from-reference, git-commit-message")
+    print("Task skills: bootstrap-from-reference, git-commit")
     print(f"Optional templates: {ROOT / 'templates'}")
     return 0
 

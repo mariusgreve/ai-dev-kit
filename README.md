@@ -100,7 +100,8 @@ Installation makes all kit skills available globally. Project init copies only
 selected stack skills so project conventions remain stable across kit updates.
 
 - Stack guidance: Java, Spring, PostgreSQL, React and TypeScript.
-- `git-commit-message`: write or review a message from a real diff.
+- `git-commit`: analyze staged, unstaged and untracked changes, split unrelated
+  work, and create one or more focused commits.
 - `bootstrap-from-reference`: create a runnable foundation from an existing
   repository and requirements while preserving its stack and integration contracts.
 
