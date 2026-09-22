@@ -63,6 +63,12 @@ command output, and do not bypass failing commit hooks with `--no-verify`.
 - Add a body unless the change is trivial. Explain why the change exists and
   important trade-offs rather than narrating the diff. Wrap prose at 72
   characters with `fmt -w 72`, not by eye.
+- Hard gate: before creating the commit, verify every line of the final message
+  is 72 characters or fewer. If any line exceeds 72, stop, rewrap it, and
+  retry. Do not create the commit until the message passes this check.
+- Validate the final message with:
+  `git log -1 --format=%B | awk '{ print length, $0 }' | sort -rn | head`
+  If the longest line is greater than 72, the message is not compliant.
 - Never embed a literal `\n` in a quoted `git commit -m` argument. Use multiple
   `-m` flags or a message file containing real line breaks.
 
