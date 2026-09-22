@@ -33,13 +33,15 @@ someone reading the history later.
   established format requires otherwise.
 - Avoid vague subjects such as `Update files`, `Various fixes` and `WIP`.
 
-## Add a body when it earns its space
+## Add a body by default
 
-Separate the body from the subject with a blank line and wrap prose at about 72
-characters. Explain:
+Default to including a body unless the change is truly trivial (a typo fix, a
+one-line config tweak, a dependency bump with no behavior change). Separate the
+body from the subject with a blank line and wrap prose at about 72 characters.
+Explain:
 
 - what changed at a useful level;
-- why the change was needed;
+- why the change was needed, including the bug or motivating scenario;
 - relevant constraints, trade-offs or behavior changes.
 
 Do not narrate implementation details that the diff already makes obvious.
@@ -63,9 +65,10 @@ Do not introduce a new commit taxonomy as part of an unrelated request.
 
 ## Present the result
 
-Return one ready-to-copy message in a fenced text block. Omit the body when the
-subject fully explains a small change. Add a short note only when there is an
-important uncertainty, convention conflict or recommended commit split.
+Return one ready-to-copy message in a fenced text block. Only omit the body
+when the change is trivial enough that the subject fully explains it. Add a
+short note only when there is an important uncertainty, convention conflict or
+recommended commit split.
 
 When reviewing an existing message, identify the material problem briefly and
 then provide the improved ready-to-copy version.
