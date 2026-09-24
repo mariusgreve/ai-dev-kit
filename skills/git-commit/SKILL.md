@@ -69,8 +69,13 @@ command output, and do not bypass failing commit hooks with `--no-verify`.
 - Validate the final message with:
   `git log -1 --format=%B | awk '{ print length, $0 }' | sort -rn | head`
   If the longest line is greater than 72, the message is not compliant.
-- Never embed a literal `\n` in a quoted `git commit -m` argument. Use multiple
-  `-m` flags or a message file containing real line breaks.
+- Never embed a literal `\n` in a quoted `git commit -m` argument. Each
+  `-m` flag becomes its own paragraph separated by a blank line, so never
+  pass one wrapped body line per `-m` flag — that inserts a blank line
+  between every line. Use at most one `-m` for the subject and one `-m`
+  containing the entire wrapped body (with real newlines inside the
+  argument), or write the full message to a file and commit with
+  `git commit -F <file>`.
 
 ## Commit and repeat
 
