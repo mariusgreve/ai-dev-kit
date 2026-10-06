@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+import re
+import sys
+import textwrap
+WIDTH = 72
+BULLET = re.compile(r"^(\s*(?:[-*+]|\d+[.)])\s+)(.*)$")
+
+def wrap(text, initial="", subsequent=""):
+   return textwrap.wrap(
+       text,
+       width=WIDTH,
+       initial_indent=initial,
+       subsequent_indent=subsequent,
+       break_long_words=False,
+       break_on_hyphens=False,
+   )
+
+lines = sys.stdin.read().splitlines()
+if not lines or not lines[0].strip():
+   sys.exit("Commit subject is empty")
+subject = lines[0].strip()
+if len(subject) > WIDTH:
+   sys.exit(f"Commit subject exceeds {WIDTH} characters")
+output = [subject]
+paragraph = []
+
+def flush():
+   if paragraph:
+       output.extend(wrap(" ".join(line.strip() for line in paragraph)))
+       paragraph.clear()
+
+for line in lines[1:]:
+   if not line.strip():
+       flush()
+       if output[-1] != "":
+           output.append("")
+       continue
+   match = BULLET.match(line)
+   if match:
+       flush()
+       prefix, text = match.groups()
+       output.extend(wrap(text, prefix, " " * len(prefix)))
+   else:
+       paragraph.append(line)
+flush()
+while output and output[-1] == "":
+   output.pop()
+for i, line in enumerate(output, 1):
+   if len(line) > WIDTH:
+       sys.exit(f"Line {i} exceeds {WIDTH} characters: {line}")
+print("\n".join(output))

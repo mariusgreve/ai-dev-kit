@@ -61,21 +61,23 @@ command output, and do not bypass failing commit hooks with `--no-verify`.
 - Use an imperative, capitalized subject with no trailing period. Aim for 50
   characters and make it specific enough to distinguish in a log.
 - Add a body unless the change is trivial. Explain why the change exists and
-  important trade-offs rather than narrating the diff. Wrap prose at 72
-  characters with `fmt -w 72`, not by eye.
-- Hard gate: before creating the commit, verify every line of the final message
-  is 72 characters or fewer. If any line exceeds 72, stop, rewrap it, and
-  retry. Do not create the commit until the message passes this check.
-- Validate the final message with:
-  `git log -1 --format=%B | awk '{ print length, $0 }' | sort -rn | head`
-  If the longest line is greater than 72, the message is not compliant.
-- Never embed a literal `\n` in a quoted `git commit -m` argument. Each
-  `-m` flag becomes its own paragraph separated by a blank line, so never
-  pass one wrapped body line per `-m` flag — that inserts a blank line
-  between every line. Use at most one `-m` for the subject and one `-m`
-  containing the entire wrapped body (with real newlines inside the
-  argument), or write the full message to a file and commit with
-  `git commit -F <file>`.
+  important trade-offs rather than narrating the diff.
+- Write the complete unformatted commit message to a temporary file. Use a
+  blank line between paragraphs and write each bullet as a separate line.
+  Do not manually wrap text to satisfy the line-length limit.
+- Format and validate the message using exactly:
+  `"$SKILL_DIR/scripts/format-commit-message" < "$MESSAGE_FILE" > "$FORMATTED_MESSAGE_FILE"`
+  The formatter is the sole authority for commit-message line wrapping.
+  Never use `fmt`, `fold`, manual wrapping, or another wrapping command.
+- If the formatter exits non-zero, do not create the commit. Fix the message
+  content and run the formatter again.
+- Create the commit using exactly:
+  `git commit -F "$FORMATTED_MESSAGE_FILE"`
+  Do not construct the final commit message using `git commit -m`.
+- After creating the commit, validate the committed message with:
+  `git log -1 --format=%B | awk '{ print length, $0 }' | sort -nr | head`
+  The longest line must be 72 characters or fewer. If it is longer, amend the
+  commit with a corrected message before continuing.
 
 ## Commit and repeat
 
