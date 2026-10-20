@@ -104,12 +104,16 @@ selected stack skills so project conventions remain stable across kit updates.
   work, and create one or more focused commits.
 - `bootstrap-from-reference`: create a runnable foundation from an existing
   repository and requirements while preserving its stack and integration contracts.
+- `jira-implementation-analysis`: turn a Jira ticket into a read-only, evidence-based,
+  file-by-file implementation proposal.
 
 Example:
 
 > Use bootstrap-from-reference. Reference: ../example. Destination: ../new-app.
 > Requirements: ./requirements.md. Create the base structure and document what
 > remains to implement.
+
+> Use jira-implementation-analysis. Ticket: PROJ-123.
 
 Project instructions and explicit requirements take precedence over generic
 skill defaults. Load skills when relevant to the task.
