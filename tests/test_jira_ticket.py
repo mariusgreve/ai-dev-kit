@@ -58,20 +58,46 @@ class JiraTicketTest(unittest.TestCase):
         self.server.requests = []
         self.server.replies = []
         self.environment = {"JIRA_BASE_URL": self.base_url, "JIRA_TOKEN": TOKEN}
+        self.field_defs = [
+            {"id": "customfield_10002", "name": "Internal Cost Notes"},
+            {"id": "customfield_10001", "name": "Acceptance Criteria"},
+        ]
         self.issue = {
             "key": "PROJ-123",
-            "names": {"customfield_10001": "Acceptance Criteria"},
+            "id": "1000",
             "fields": {
                 "summary": "Fix search", "description": "Search returns duplicates",
                 "status": {"name": "Open"}, "issuetype": {"name": "Bug"},
                 "priority": {"name": "High"}, "labels": ["search"],
                 "components": [{"name": "Backend"}],
                 "customfield_10001": "No duplicate results",
-                "comment": {"startAt": 0, "total": 1, "comments": [{"id": "1", "body": "Context"}]},
-                "issuelinks": [{"type": {"name": "Blocks"}, "outwardIssue": {"key": "OTHER-1"}}],
-                "subtasks": [{"key": "PROJ-124"}],
+                "customfield_10002": "This private field must not be requested or printed.",
+                "attachment": [{"filename": "large-secret-design.pdf"}],
+                "issuelinks": [{
+                    "type": {"name": "Blocks", "outward": "blocks"},
+                    "outwardIssue": {"key": "OTHER-1", "fields": {
+                        "summary": "Related search", "status": {"name": "Open"},
+                    }},
+                }],
+                "subtasks": [{"key": "PROJ-124", "fields": {
+                    "summary": "Add search tests", "status": {"name": "In Progress"},
+                }}],
             },
         }
+
+    def standard_replies(self, issue=None, comments=None):
+        if comments is None:
+            comments = {
+                "startAt": 0, "total": 1,
+                "comments": [{
+                    "author": {"displayName": "Reviewer"},
+                    "created": "2026-10-20T12:00:00.000+0000",
+                    "body": "Keep search results unique.",
+                }],
+            }
+        issue = json.loads(json.dumps(self.issue if issue is None else issue))
+        issue["fields"]["comment"] = comments
+        return [(200, {}, self.field_defs), (200, {}, issue)]
 
     def run_script(self, key="PROJ-123", environment=None):
         return subprocess.run(
@@ -89,65 +115,75 @@ class JiraTicketTest(unittest.TestCase):
         self.assertNotIn(TOKEN, result.stderr)
         self.assertNotIn("Traceback", result.stderr)
 
-    def test_fetches_all_fields_with_names_and_bearer_auth(self):
-        self.server.replies = [(200, {}, self.issue)]
+    def test_fetches_only_relevant_fields_and_emits_compact_shape(self):
+        self.server.replies = self.standard_replies()
         result = self.run_script(environment={**self.environment, "JIRA_BASE_URL": self.base_url + "/"})
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout), self.issue)
+        payload = json.loads(result.stdout)
+        self.assertEqual(
+            list(payload),
+            ["key", "fields"],
+        )
+        self.assertEqual(payload["key"], "PROJ-123")
+        fields = payload["fields"]
+        self.assertEqual(fields["acceptance_criteria"], {"Acceptance Criteria": "No duplicate results"})
+        self.assertEqual(fields["comment"]["total"], 1)
+        self.assertEqual(fields["comment"]["comments"][0]["body"], "Keep search results unique.")
+        self.assertEqual(fields["issuelinks"][0]["outwardIssue"]["key"], "OTHER-1")
+        self.assertEqual(fields["subtasks"][0]["key"], "PROJ-124")
+        self.assertNotIn("Internal Cost Notes", result.stdout)
+        self.assertNotIn("private field", result.stdout)
+        self.assertNotIn("large-secret-design.pdf", result.stdout)
+        self.assertEqual(len(self.server.requests), 2)
         method, target, authorization = self.server.requests[0]
         self.assertEqual(method, "GET")
-        self.assertEqual(urlsplit(target).path, "/jira/rest/api/2/issue/PROJ-123")
-        self.assertEqual(parse_qs(urlsplit(target).query), {"fields": ["*all"], "expand": ["names"]})
+        self.assertEqual(urlsplit(target).path, "/jira/rest/api/2/field")
         self.assertEqual(authorization, "Bearer " + TOKEN)
-        self.assertNotIn(TOKEN, result.stdout + result.stderr + target)
-        self.assertEqual(len(self.server.requests), 1)
+        method, target, authorization = self.server.requests[1]
+        self.assertEqual(method, "GET")
+        self.assertEqual(urlsplit(target).path, "/jira/rest/api/2/issue/PROJ-123")
+        params = parse_qs(urlsplit(target).query)
+        self.assertEqual(params["fields"], [",".join((*jira.ISSUE_FIELDS, "customfield_10001"))])
+        self.assertNotIn("expand", params)
+        self.assertNotIn("customfield_10002", params["fields"][0])
+        self.assertEqual(authorization, "Bearer " + TOKEN)
+        self.assertNotIn(TOKEN, result.stdout + result.stderr)
 
-    def test_fetches_all_comment_pages_without_following_linked_tickets(self):
-        self.issue["fields"]["comment"]["total"] = 3
-        self.server.replies = [
-            (200, {}, self.issue),
-            (200, {}, {"startAt": 0, "total": 3, "comments": [{"id": "1"}, {"id": "2"}]}),
-            (200, {}, {"startAt": 2, "total": 3, "comments": [{"id": "3"}]}),
-        ]
+    def test_keeps_all_comment_bodies_when_paged(self):
+        comment_list = [{
+            "author": {"displayName": "R" * 500},
+            "created": f"2026-10-{index + 1:02d}",
+            "body": f"comment-{index} " + ("x" * 2_000),
+        } for index in range(105)]
+        replies = self.standard_replies(comments={
+            "startAt": 0, "maxResults": 20, "total": 105, "comments": comment_list[:20],
+        })
+        replies.append((200, {}, {
+            "startAt": 0, "total": 105, "comments": comment_list[:100],
+        }))
+        replies.append((200, {}, {
+            "startAt": 100, "total": 105, "comments": comment_list[100:],
+        }))
+        self.server.replies = replies
         result = self.run_script()
         self.assertEqual(result.returncode, 0, result.stderr)
-        comments = json.loads(result.stdout)["fields"]["comment"]
-        self.assertEqual(comments["comments"], [{"id": "1"}, {"id": "2"}, {"id": "3"}])
-        self.assertEqual(comments["startAt"], 0)
-        for request, offset in zip(self.server.requests[1:], (0, 2)):
+        payload = json.loads(result.stdout)
+        comments = payload["fields"]["comment"]
+        self.assertEqual(comments["total"], 105)
+        self.assertEqual(len(comments["comments"]), 105)
+        self.assertEqual(comments["comments"][0]["body"], comment_list[0]["body"])
+        self.assertEqual(comments["comments"][0]["author"]["displayName"], "R" * 500)
+        self.assertEqual(comments["comments"][-1]["body"], comment_list[-1]["body"])
+        self.assertEqual(len(self.server.requests), 4)
+        for request, offset in zip(self.server.requests[2:], (0, 100)):
             self.assertEqual(request[0], "GET")
-            self.assertEqual(urlsplit(request[1]).path, "/jira/rest/api/2/issue/PROJ-123/comment")
-            self.assertEqual(parse_qs(urlsplit(request[1]).query)["startAt"], [str(offset)])
-        self.assertEqual(len(self.server.requests), 3)
-
-    def test_missing_comments_are_not_treated_as_an_empty_thread(self):
-        del self.issue["fields"]["comment"]
-        self.server.replies = [(200, {}, self.issue)]
-        result = self.run_script()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertNotIn("comment", json.loads(result.stdout)["fields"])
-        self.assertEqual(len(self.server.requests), 1)
-
-    def test_rejects_stalled_or_changing_comment_pagination(self):
-        for page in (
-            {"startAt": 0, "total": 2, "comments": []},
-            {"startAt": 1, "total": 2, "comments": [{"id": "2"}]},
-            {"startAt": 0, "total": 3, "comments": [{"id": "1"}]},
-        ):
-            with self.subTest(page=page):
-                self.issue["fields"]["comment"]["total"] = 2
-                self.server.replies = [(200, {}, self.issue), (200, {}, page)]
-                self.assert_failure(self.run_script(), "pagination")
-
-    def test_rejects_malformed_initial_comment_pagination(self):
-        for comment in (
-            [], {"total": -1, "comments": []}, {"total": 0, "comments": [{"id": "1"}]},
-            {"startAt": -1, "total": 0, "comments": []}, {"total": 1, "comments": None},
-        ):
-            with self.subTest(comment=comment):
-                self.issue["fields"]["comment"] = comment
-                self.server.replies = [(200, {}, self.issue)]
-                self.assert_failure(self.run_script(), "Jira returned")
+            self.assertEqual(
+                urlsplit(request[1]).path,
+                "/jira/rest/api/2/issue/PROJ-123/comment",
+            )
+            params = parse_qs(urlsplit(request[1]).query)
+            self.assertEqual(params["startAt"], [str(offset)])
+            self.assertEqual(params["maxResults"], [str(jira.COMMENT_PAGE_SIZE)])
 
     def test_missing_environment_fails_without_a_request(self):
         for environment in ({}, {"JIRA_TOKEN": TOKEN}, {"JIRA_BASE_URL": self.base_url}):
@@ -183,28 +219,53 @@ class JiraTicketTest(unittest.TestCase):
         for status, message in ((401, "authentication"), (403, "denied access"),
                                 (404, "not found"), (429, "429"), (500, "500")):
             with self.subTest(status=status):
-                self.server.replies = [(status, {}, {"errorMessages": [TOKEN]})]
+                self.server.replies = [
+                    (200, {}, self.field_defs),
+                    (status, {}, {"errorMessages": [TOKEN]}),
+                ]
                 self.assert_failure(self.run_script(), message)
 
     def test_refuses_redirects_and_does_not_forward_the_token(self):
         for status in (301, 302, 303, 307, 308):
             with self.subTest(status=status):
                 self.server.requests = []
-                self.server.replies = [(status, {"Location": self.base_url + "/other"}, {})]
+                self.server.replies = [
+                    (200, {}, self.field_defs),
+                    (status, {"Location": self.base_url + "/other"}, {}),
+                ]
                 self.assert_failure(self.run_script(), "redirects are disabled")
-                self.assertEqual(len(self.server.requests), 1)
+                self.assertEqual(len(self.server.requests), 2)
 
     def test_invalid_json_and_unexpected_response_shapes(self):
-        for body in (b"<html>Sign in</html>", b"\xff", [], {},
-                     {"key": "OTHER-1", "fields": {}}):
+        for body in (b"<html>Sign in</html>", b"\xff", {}, "unexpected"):
             with self.subTest(body=body):
                 self.server.replies = [(200, {}, body)]
                 self.assert_failure(self.run_script(), "Jira returned")
 
     def test_does_not_print_a_token_reflected_in_successful_response(self):
         self.issue["fields"]["description"] = TOKEN
-        self.server.replies = [(200, {}, self.issue)]
+        self.server.replies = self.standard_replies()
         self.assert_failure(self.run_script(), "refusing to print")
+
+    def test_preserves_long_values_in_selected_fields(self):
+        description = "é" * 9_000
+        acceptance_criteria = "Acceptance criteria " * 500
+        self.issue["fields"]["description"] = description
+        self.issue["fields"]["customfield_10001"] = acceptance_criteria
+        replies = self.standard_replies(comments={
+            "startAt": 0, "total": 1,
+            "comments": [{"body": "Comment " * 1_000}],
+        })
+        self.server.replies = replies
+        result = self.run_script()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        fields = json.loads(result.stdout)["fields"]
+        self.assertEqual(fields["description"], description)
+        self.assertEqual(
+            fields["acceptance_criteria"]["Acceptance Criteria"],
+            acceptance_criteria,
+        )
+        self.assertEqual(fields["comment"]["comments"][0]["body"], "Comment " * 1_000)
 
     def test_network_timeout_and_certificate_errors_are_sanitized(self):
         for reason, message in (

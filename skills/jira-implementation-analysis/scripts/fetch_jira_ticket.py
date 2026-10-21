@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read a Jira Data Center/Server ticket without modifying Jira or local files."""
+"""Fetch a compact, read-only Jira Data Center/Server ticket summary."""
 
 import argparse
 from http.client import HTTPException
@@ -11,6 +11,14 @@ import sys
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+
+COMMENT_PAGE_SIZE = 100
+ISSUE_FIELDS = (
+    "summary", "description", "status", "issuetype", "priority",
+    "labels", "components", "issuelinks", "subtasks", "comment",
+)
+AC_FIELD_PATTERN = re.compile(r"\bacceptance criteri(?:a|on)\b", re.IGNORECASE)
 
 
 class JiraReadError(Exception):
@@ -56,9 +64,12 @@ def configuration():
     return base_url, token
 
 
-def read_json(opener, base_url, token, path, **query):
+def read_json(opener, base_url, token, path, expected_type, **query):
+    url = base_url + path
+    if query:
+        url += "?" + urlencode(query)
     request = Request(
-        base_url + path + "?" + urlencode(query),
+        url,
         headers={"Accept": "application/json", "Authorization": "Bearer " + token},
         method="GET",
     )
@@ -90,9 +101,28 @@ def read_json(opener, base_url, token, path, **query):
         result = json.loads(data)
     except (ValueError, UnicodeError):
         raise JiraReadError("Jira returned invalid JSON instead of a ticket response.") from None
-    if not isinstance(result, dict):
-        raise JiraReadError("Jira returned an unexpected response; expected a JSON object.")
+    if not isinstance(result, expected_type):
+        expected = "array" if expected_type is list else "object"
+        raise JiraReadError(f"Jira returned an unexpected response; expected a JSON {expected}.")
     return result
+
+
+def discover_acceptance_fields(opener, base_url, token):
+    fields = read_json(opener, base_url, token, "/rest/api/2/field", list)
+    matches = []
+    for item in fields:
+        if not isinstance(item, dict):
+            continue
+        field_id, name = item.get("id"), item.get("name")
+        if (
+            isinstance(field_id, str)
+            and re.fullmatch(r"customfield_[0-9]+", field_id)
+            and isinstance(name, str)
+            and AC_FIELD_PATTERN.search(name)
+        ):
+            matches.append((field_id, name))
+    matches.sort(key=lambda pair: pair[0])
+    return matches
 
 
 def complete_comments(opener, base_url, token, issue_path, fields):
@@ -117,21 +147,21 @@ def complete_comments(opener, base_url, token, issue_path, fields):
     comments = []
     while len(comments) < total:
         page = read_json(
-            opener, base_url, token, issue_path + "/comment",
-            startAt=len(comments), maxResults=100,
+            opener, base_url, token, issue_path + "/comment", dict,
+            startAt=len(comments), maxResults=COMMENT_PAGE_SIZE,
         )
-        batch = page.get("comments")
         if (
             page.get("total") != total
             or page.get("startAt") != len(comments)
-            or not isinstance(batch, list)
-            or not batch
-            or len(comments) + len(batch) > total
+            or not isinstance(page.get("comments"), list)
+            or not page["comments"]
+            or len(comments) + len(page["comments"]) > total
+            or any(not isinstance(item, dict) for item in page["comments"])
         ):
             raise JiraReadError(
                 "Jira comment pagination is incomplete or changed during retrieval. Retry the read."
             )
-        comments.extend(batch)
+        comments.extend(page["comments"])
     fields["comment"] = {
         **comment, "startAt": 0, "maxResults": len(comments),
         "total": total, "comments": comments,
@@ -140,26 +170,49 @@ def complete_comments(opener, base_url, token, issue_path, fields):
 
 def fetch_ticket(key, base_url, token):
     opener = build_opener(NoRedirects())
+    acceptance_fields = discover_acceptance_fields(opener, base_url, token)
+    requested_fields = list(ISSUE_FIELDS)
+    requested_fields.extend(field_id for field_id, _ in acceptance_fields)
     issue_path = "/rest/api/2/issue/" + key
-    issue = read_json(opener, base_url, token, issue_path, fields="*all", expand="names")
+    issue = read_json(
+        opener, base_url, token, issue_path, dict,
+        fields=",".join(requested_fields),
+    )
     if issue.get("key") != key or not isinstance(issue.get("fields"), dict):
         raise JiraReadError("Jira returned an unexpected ticket key or missing fields.")
     complete_comments(opener, base_url, token, issue_path, issue["fields"])
-    return issue
+    selected_fields = {
+        name: value
+        for name, value in issue["fields"].items()
+        if name in requested_fields
+    }
+    if acceptance_fields:
+        selected_fields["acceptance_criteria"] = {
+            name: selected_fields.pop(field_id)
+            for field_id, name in acceptance_fields
+            if field_id in selected_fields
+        }
+    return json.dumps(
+        {"key": key, "fields": selected_fields},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Fetch a Jira Data Center/Server ticket as JSON using JIRA_BASE_URL and JIRA_TOKEN."
+        description="Fetch a compact Jira Data Center/Server ticket summary as JSON."
     )
     parser.add_argument("key", help="Jira ticket key, for example PROJ-123")
     args = parser.parse_args()
     try:
-        if not re.fullmatch(r"[A-Z][A-Z0-9_]*-[1-9][0-9]*", args.key):
+        if (
+            len(args.key) > 100
+            or not re.fullmatch(r"[A-Z][A-Z0-9_]*-[1-9][0-9]*", args.key)
+        ):
             raise JiraReadError("Invalid ticket key. Expected an uppercase key such as PROJ-123.")
         base_url, token = configuration()
-        issue = fetch_ticket(args.key, base_url, token)
-        output = json.dumps(issue, indent=2, ensure_ascii=False)
+        output = fetch_ticket(args.key, base_url, token)
         if token in output:
             raise JiraReadError("Jira response contains the configured token; refusing to print it.")
     except JiraReadError as exc:

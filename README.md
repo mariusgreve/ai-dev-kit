@@ -118,8 +118,8 @@ Example:
 The Jira skill includes a Python 3.10+ reader for self-hosted Jira Data
 Center/Server. Set `JIRA_BASE_URL` and `JIRA_TOKEN` in the agent's environment;
 see [Jira reader setup and usage](skills/jira-implementation-analysis/README.md).
-It only reads tickets and prints their contents; it never changes Jira or
-repository files.
+It only reads relevant ticket fields and prints a compact JSON summary without
+truncating the contents of those fields; it never changes Jira or repository files.
 
 Project instructions and explicit requirements take precedence over generic
 skill defaults. Load skills when relevant to the task.

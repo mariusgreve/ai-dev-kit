@@ -43,14 +43,24 @@ preserves custom base paths, validates ticket keys, verifies certificates,
 uses a 30-second timeout per request and refuses redirects to avoid forwarding
 the token. Use the final Jira base address, not a login or redirect address.
 
-Standard output is a single JavaScript Object Notation (JSON) issue object from
-`/rest/api/2/issue/<key>?fields=*all&expand=names`. The `fields` object includes
-the summary, description, status, issue type, priority, labels, components,
-custom fields, comments, issue links and subtasks that Jira makes available.
-The `names` mapping identifies custom fields without hardcoded identifiers.
-If comments are paginated, the script reads all pages from the issue's
-`/comment` endpoint before printing the result. Linked tickets and subtasks
-are included as embedded Jira references, not recursively fetched.
+Standard output is a small JavaScript Object Notation (JSON) wrapper with
+`key` and `fields`, matching Jira's issue response shape. `fields` contains
+only the selected Jira fields. Matching acceptance-criteria custom fields are
+grouped under `acceptance_criteria` using their Jira display names; other
+selected fields retain Jira's response shape and full contents. Unselected
+custom fields, attachments, worklogs, and unrelated issue data are not
+requested or printed.
+
+The reader restricts which fields are requested, not the values within those
+fields. Selected summaries, descriptions, acceptance-criteria values,
+comments, labels, components, linked issues, and subtasks are returned without
+character, item-count, or total-output-size caps. If Jira exposes no custom
+field named for acceptance criteria, `acceptance_criteria` is absent.
+
+The issue's `comment` field includes its first page. If there are more, the
+reader fetches the remaining pages from `/comment` in batches of up to 100,
+preserving Jira's order. Linked issues and subtasks
+are limited to those selected fields in Jira's response.
 
 Output may contain sensitive ticket data. Read it directly; do not save it or
 include it in unrelated logs. The script writes no files and does not print the
@@ -62,5 +72,8 @@ tickets/endpoints (404), redirects and network errors are reported explicitly.
 This reader targets Jira Data Center/Server bearer-token authentication, not
 Jira Cloud's email/token authentication. Field visibility depends on account
 permissions and Jira configuration; a missing field does not prove the ticket
-has no acceptance criteria or comments. It does not download attachments or
-fetch linked pages. No real Jira service is used by the local mock tests.
+has no acceptance criteria or comments. Acceptance fields are discovered by
+matching field names containing "Acceptance Criteria" or "Acceptance
+Criterion". Other custom field naming conventions are not inferred. It does
+not download attachments or fetch linked pages. No real Jira service is used
+by the local mock tests.
