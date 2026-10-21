@@ -9,6 +9,12 @@ Turn the current working tree into one or more focused, reviewable commits.
 Do not stop after proposing messages: create the commits unless the user asks
 only for a plan or message review.
 
+An optional Jira ticket can be passed as the skill's first argument, for
+example `$git-commit TICKET-123`. When provided, prefix the subject of every
+commit as `TICKET-123: Commit title`. Pass the ticket to the formatter so it
+validates the ticket and final subject length. Without a ticket, preserve the
+repository's normal subject format.
+
 ## Inspect the repository
 
 - Read repository instructions such as `AGENTS.md` and `CONTRIBUTING.md`.
@@ -56,10 +62,13 @@ command output, and do not bypass failing commit hooks with `--no-verify`.
 ## Write the message
 
 - Follow the repository's established convention. Do not introduce
-  Conventional Commits, ticket prefixes, or another taxonomy unless the
-  history or project instructions use it.
+  Conventional Commits or another taxonomy unless the history or project
+  instructions use it. A ticket prefix is required when the skill was invoked
+  with a Jira ticket argument.
 - Use an imperative, capitalized subject with no trailing period. Aim for 50
-  characters and make it specific enough to distinguish in a log.
+  characters before any ticket prefix and make it specific enough to
+  distinguish in a log. Keep the complete subject, including its prefix,
+  within 72 characters.
 - Add a body unless the change is trivial. Explain why the change exists and
   important trade-offs rather than narrating the diff.
 - Write the complete unformatted commit message to a temporary file. Use a
@@ -69,6 +78,8 @@ command output, and do not bypass failing commit hooks with `--no-verify`.
   `"$SKILL_DIR/scripts/format-commit-message" < "$MESSAGE_FILE" > "$FORMATTED_MESSAGE_FILE"`
   The formatter is the sole authority for commit-message line wrapping.
   Never use `fmt`, `fold`, manual wrapping, or another wrapping command.
+- When a Jira ticket argument was supplied, include `--ticket "$JIRA_TICKET"`
+  before the input redirection in the formatter command above.
 - If the formatter exits non-zero, do not create the commit. Fix the message
   content and run the formatter again.
 - Create the commit using exactly:

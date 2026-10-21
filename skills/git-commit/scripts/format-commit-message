@@ -4,6 +4,15 @@ import sys
 import textwrap
 WIDTH = 72
 BULLET = re.compile(r"^(\s*(?:[-*+]|\d+[.)])\s+)(.*)$")
+TICKET = re.compile(r"^[A-Z][A-Z0-9]*-\d+$")
+
+ticket = None
+if len(sys.argv) == 3 and sys.argv[1] == "--ticket":
+   ticket = sys.argv[2]
+elif len(sys.argv) != 1:
+   sys.exit("Usage: format-commit-message [--ticket PROJECT-123]")
+if ticket is not None and not TICKET.fullmatch(ticket):
+   sys.exit("Jira ticket must use the format PROJECT-123")
 
 def wrap(text, initial="", subsequent=""):
    return textwrap.wrap(
@@ -19,6 +28,8 @@ lines = sys.stdin.read().splitlines()
 if not lines or not lines[0].strip():
    sys.exit("Commit subject is empty")
 subject = lines[0].strip()
+if ticket is not None and not subject.startswith(f"{ticket}: "):
+   subject = f"{ticket}: {subject}"
 if len(subject) > WIDTH:
    sys.exit(f"Commit subject exceeds {WIDTH} characters")
 output = [subject]

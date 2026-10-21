@@ -2,9 +2,9 @@ import subprocess
 import unittest
 SCRIPT = "./scripts/format-commit-message"
 
-def format_message(message):
+def format_message(message, *args):
    return subprocess.run(
-       [SCRIPT],
+       [SCRIPT, *args],
        input=message,
        text=True,
        capture_output=True,
@@ -47,6 +47,24 @@ class FormatCommitMessageTest(unittest.TestCase):
        self.assertTrue(all(len(line) <= 72 for line in lines))
    def test_rejects_long_subject(self):
        result = format_message("x" * 73)
+       self.assertNotEqual(result.returncode, 0)
+       self.assertIn("exceeds 72", result.stderr)
+   def test_prefixes_subject_with_ticket(self):
+       result = format_message("Fix the login flow", "--ticket", "TICKET-123")
+       self.assertEqual(result.returncode, 0)
+       self.assertEqual(result.stdout, "TICKET-123: Fix the login flow\n")
+   def test_does_not_duplicate_ticket_prefix(self):
+       result = format_message(
+           "TICKET-123: Fix the login flow", "--ticket", "TICKET-123"
+       )
+       self.assertEqual(result.returncode, 0)
+       self.assertEqual(result.stdout, "TICKET-123: Fix the login flow\n")
+   def test_rejects_invalid_ticket(self):
+       result = format_message("Fix the login flow", "--ticket", "ticket123")
+       self.assertNotEqual(result.returncode, 0)
+       self.assertIn("PROJECT-123", result.stderr)
+   def test_ticket_prefix_counts_toward_subject_limit(self):
+       result = format_message("x" * 62, "--ticket", "TICKET-123")
        self.assertNotEqual(result.returncode, 0)
        self.assertIn("exceeds 72", result.stderr)
 
