@@ -10,10 +10,23 @@ Do not stop after proposing messages: create the commits unless the user asks
 only for a plan or message review.
 
 An optional Jira ticket can be passed as the skill's first argument, for
-example `$git-commit TICKET-123`. When provided, prefix the subject of every
-commit as `TICKET-123: Commit title`. Pass the ticket to the formatter so it
-validates the ticket and final subject length. Without a ticket, preserve the
-repository's normal subject format.
+example `$git-commit TICKET-123`. When no argument is passed, detect the ticket
+from the current branch name (see "Resolve the Jira ticket"). When a ticket is
+resolved, prefix the subject of every commit as `TICKET-123: Commit title`.
+Pass the ticket to the formatter so it validates the ticket and final subject
+length. Without a ticket, preserve the repository's normal subject format.
+
+## Resolve the Jira ticket
+
+1. If a ticket argument was passed, use it. It takes precedence over the branch.
+2. Otherwise, get the current branch with `git branch --show-current`. If it is
+   empty (detached HEAD) or contains no ticket, proceed without a ticket.
+3. Search the branch name for an uppercase Jira key matching
+   `[A-Z][A-Z0-9]+-[0-9]+` on a word boundary, for example `feature/PROJ-123-login`,
+   `PROJ-123-login`, or `bugfix/PROJ-42`. Use the first match.
+4. If the branch contains several different keys, ask the user which one to
+   use instead of guessing.
+5. Lowercase names such as `feature-123` are not Jira keys and are ignored.
 
 ## Inspect the repository
 
@@ -63,8 +76,8 @@ command output, and do not bypass failing commit hooks with `--no-verify`.
 
 - Follow the repository's established convention. Do not introduce
   Conventional Commits or another taxonomy unless the history or project
-  instructions use it. A ticket prefix is required when the skill was invoked
-  with a Jira ticket argument.
+  instructions use it. A ticket prefix is required whenever a Jira ticket was
+  resolved, whether from the argument or the branch name.
 - Use an imperative, capitalized subject with no trailing period. Aim for 50
   characters before any ticket prefix and make it specific enough to
   distinguish in a log. Keep the complete subject, including its prefix,
@@ -78,7 +91,7 @@ command output, and do not bypass failing commit hooks with `--no-verify`.
   `"$SKILL_DIR/scripts/format-commit-message" < "$MESSAGE_FILE" > "$FORMATTED_MESSAGE_FILE"`
   The formatter is the sole authority for commit-message line wrapping.
   Never use `fmt`, `fold`, manual wrapping, or another wrapping command.
-- When a Jira ticket argument was supplied, include `--ticket "$JIRA_TICKET"`
+- When a Jira ticket was resolved, include `--ticket "$JIRA_TICKET"`
   before the input redirection in the formatter command above.
 - If the formatter exits non-zero, do not create the commit. Fix the message
   content and run the formatter again.

@@ -1,4 +1,4 @@
 interface:
   display_name: "Git Commit"
   short_description: "Organize changes and create focused Git commits"
-  default_prompt: "Use $git-commit to analyze my changes and create the appropriate commit or commits. Optionally pass a Jira ticket (for example, TICKET-123) to prefix every commit subject."
+  default_prompt: "Use $git-commit to analyze my changes and create the appropriate commit or commits. Optionally pass a Jira ticket (for example, TICKET-123) to prefix every commit subject. If omitted, the ticket is detected from the branch name when present."
