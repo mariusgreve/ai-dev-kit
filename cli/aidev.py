@@ -22,6 +22,7 @@ def main() -> int:
     p_init.add_argument("project", nargs="?", default=".")
     p_init.add_argument("--stacks", nargs="+", choices=SUPPORTED_STACKS, default=None)
     p_init.add_argument("--yes", action="store_true", help="accept detected stacks without prompting")
+    p_init.add_argument("--assess", action="store_true", help="inspect existing setup without writing files")
     p_validate = sub.add_parser("validate", help="check setup files and skill links (does not run tests)")
     p_validate.add_argument("project", nargs="?", default=".")
     sub.add_parser("list", help="list available reusable content")
@@ -36,7 +37,7 @@ def main() -> int:
                     "Existing task notes are unchanged.\n")
     args = parser.parse_args()
     if args.command == "init":
-        return project.init(args)
+        return project.assess(Path(args.project).resolve()) if args.assess else project.init(args)
     if args.command == "validate":
         return project.validate_project(Path(args.project).resolve())
     if args.command == "install-skills":
