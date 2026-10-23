@@ -72,6 +72,43 @@ def verify_script() -> str:
             "python3 - <<'AIDEV_VERIFY_PY'\n" + runner + "AIDEV_VERIFY_PY\n")
 
 
+
+def assess(project: Path) -> int:
+    """Report existing project onboarding evidence without modifying files."""
+    if not project.is_dir():
+        print(f"Project directory does not exist: {project}", file=sys.stderr)
+        return 1
+    print(f"AI onboarding assessment: {project}")
+    instructions = ("AGENTS.md", "CLAUDE.md", ".github/copilot-instructions.md")
+    present = [name for name in instructions if (project / name).is_file()]
+    print("Existing AI instructions: " + (", ".join(present) if present else "none"))
+    if (project / "AGENTS.md").is_file():
+        print("- AGENTS.md already exists; init will preserve it unchanged.")
+    else:
+        print("- init would create a generic AGENTS.md; review project conventions.")
+
+    documents = ("README.md", "CONTRIBUTING.md", "docs/architecture.md",
+                 "docs/ARCHITECTURE.md")
+    found_docs = [name for name in documents if (project / name).is_file()]
+    print("Project documentation: " + (", ".join(found_docs) if found_docs else "none at common paths"))
+    workflows = project / ".github/workflows"
+    ci = sorted(str(p.relative_to(project)) for p in workflows.glob("*.yml"))
+    ci += sorted(str(p.relative_to(project)) for p in workflows.glob("*.yaml"))
+    ci += [name for name in ("Jenkinsfile", ".gitlab-ci.yml") if (project / name).is_file()]
+    print("Existing CI: " + (", ".join(ci) if ci else "none detected at common paths"))
+    if (project / ".ai/verify.sh").is_file():
+        print("- Project verification already exists; init will preserve it.")
+    elif ci:
+        print("- Review existing CI commands before accepting the generated .ai/verify.sh.")
+    else:
+        print("- Review the generated .ai/verify.sh against actual project checks.")
+
+    detected = detect_stacks(project)
+    print("Detected stacks: " + (", ".join(sorted(detected)) if detected else "none supported"))
+    print("Assessment only: no files were created or modified.")
+    return 0
+
+
 def init(args: argparse.Namespace) -> int:
     project = Path(args.project).resolve()
     config = load_config(project)
