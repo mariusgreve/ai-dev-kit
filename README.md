@@ -29,6 +29,14 @@ To inspect the installer first, download `install.sh` and read it before running
 it. From a development checkout, `./install.sh` also works. Installation fetches
 published content from origin, not local uncommitted changes.
 
+## Assess before initializing an existing project
+
+Run `aidev init --assess` to inspect an existing repository without changing it.
+The report identifies existing AI instructions, common project documentation,
+CI configuration and detected stacks. It highlights when generated instructions
+or verification would duplicate project-owned setup. This is a lightweight
+inventory, not an AI architecture analysis or a guarantee that checks work.
+
 ## What init creates
 
 - `AGENTS.md`: a short, editable set of working instructions.
@@ -127,7 +135,7 @@ skill defaults. Load skills when relevant to the task.
 ## Commands and updates
 
 ```bash
-aidev init [project] [--yes] [--stacks java react ...]
+aidev init [project] [--yes] [--assess] [--stacks java react ...]
 aidev validate [project]
 aidev list
 aidev update
