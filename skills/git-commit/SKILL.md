@@ -11,10 +11,8 @@ only for a plan or message review.
 
 An optional Jira ticket can be passed as the skill's first argument, for
 example `$git-commit TICKET-123`. When no argument is passed, detect the ticket
-from the current branch name (see "Resolve the Jira ticket"). When a ticket is
-resolved, prefix the subject of every commit as `TICKET-123: Commit title`.
-Pass the ticket to the formatter so it validates the ticket and final subject
-length. Without a ticket, preserve the repository's normal subject format.
+from the current branch name (see "Resolve the Jira ticket"). Pass the resolved
+ticket to the formatter for every commit.
 
 ## Resolve the Jira ticket
 
@@ -76,32 +74,30 @@ command output, and do not bypass failing commit hooks with `--no-verify`.
 
 - Follow the repository's established convention. Do not introduce
   Conventional Commits or another taxonomy unless the history or project
-  instructions use it. A ticket prefix is required whenever a Jira ticket was
-  resolved, whether from the argument or the branch name.
+  instructions use it.
 - Use an imperative, capitalized subject with no trailing period. Aim for 50
   characters before any ticket prefix and make it specific enough to
-  distinguish in a log. Keep the complete subject, including its prefix,
-  within 72 characters.
+  distinguish in a log.
 - Add a body unless the change is trivial. Explain why the change exists and
   important trade-offs rather than narrating the diff.
-- Write the complete unformatted commit message to a temporary file. Use a
-  blank line between paragraphs and write each bullet as a separate line.
-  Do not manually wrap text to satisfy the line-length limit.
-- Format and validate the message using exactly:
-  `"$SKILL_DIR/scripts/format-commit-message" < "$MESSAGE_FILE" > "$FORMATTED_MESSAGE_FILE"`
-  The formatter is the sole authority for commit-message line wrapping.
-  Never use `fmt`, `fold`, manual wrapping, or another wrapping command.
-- When a Jira ticket was resolved, include `--ticket "$JIRA_TICKET"`
-  before the input redirection in the formatter command above.
-- If the formatter exits non-zero, do not create the commit. Fix the message
-  content and run the formatter again.
-- Create the commit using exactly:
-  `git commit -F "$FORMATTED_MESSAGE_FILE"`
-  Do not construct the final commit message using `git commit -m`.
-- After creating the commit, validate the committed message with:
-  `git log -1 --format=%B | awk '{ print length, $0 }' | sort -nr | head`
-  The longest line must be 72 characters or fewer. If it is longer, amend the
-  commit with a corrected message before continuing.
+- Keep plans in conversation context, not temporary files. Store the complete
+  unformatted message in `MESSAGE`, quoted literally to prevent shell expansion.
+  Use blank lines between paragraphs and a separate line for each bullet.
+- Set `MESSAGE`, format, and commit in the same shell invocation:
+
+  ```bash
+  FORMATTED_MESSAGE=$(printf '%s\n' "$MESSAGE" |
+    "$SKILL_DIR/scripts/format-commit-message") &&
+    printf '%s\n' "$FORMATTED_MESSAGE" | git commit -F -
+  ```
+
+  This keeps both messages in memory; Git reads from standard input.
+  Let the formatter add the ticket prefix, wrap body text, and enforce the
+  72-character line limit; do not wrap manually.
+- When a Jira ticket was resolved, append `--ticket "$JIRA_TICKET"` to the
+  formatter command inside the command substitution above.
+- Keep the `&&` guard so formatter failure prevents committing. Fix the message
+  and retry on failure. Do not use temporary message files or `git commit -m`.
 
 ## Commit and repeat
 
