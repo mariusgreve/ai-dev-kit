@@ -32,6 +32,34 @@ class CliTest(unittest.TestCase):
                     self.assertIn("install-skills", help_result.stdout)
                     self.assertNotIn("explain", help_result.stdout)
 
+
+    def test_assess_existing_project_is_read_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            (project / "AGENTS.md").write_text("Local rules\\n")
+            (project / "README.md").write_text("Project docs\\n")
+            (project / "Jenkinsfile").write_text("pipeline {}\\n")
+            (project / "pom.xml").write_text("<project/>\\n")
+            before = sorted(str(p.relative_to(project)) for p in project.rglob("*"))
+            result = self.run_cli(REPO / "aidev", "init", str(project),
+                                  "--assess", cwd=directory)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("AGENTS.md already exists", result.stdout)
+            self.assertIn("Jenkinsfile", result.stdout)
+            self.assertIn("Review existing CI commands", result.stdout)
+            self.assertIn("java", result.stdout)
+            self.assertEqual(before, sorted(str(p.relative_to(project))
+                                            for p in project.rglob("*")))
+            self.assertEqual((project / "AGENTS.md").read_text(), "Local rules\\n")
+
+    def test_assess_missing_project_fails_without_creation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "missing"
+            result = self.run_cli(REPO / "aidev", "init", str(missing),
+                                  "--assess", cwd=directory)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(missing.exists())
+
     def test_project_commands_route_correctly_and_report_errors(self):
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory) / "project with spaces"
