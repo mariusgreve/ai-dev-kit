@@ -106,6 +106,9 @@ selected stack skills so project conventions remain stable across kit updates.
   repository and requirements while preserving its stack and integration contracts.
 - `jira-implementation-analysis`: turn a Jira ticket into a read-only, evidence-based,
   file-by-file implementation proposal.
+- `repo-onboarding` (experiment): inspect a real repository and propose only
+  evidence-backed, high-impact improvements to existing agent instructions.
+  It makes no changes without approval and may recommend no changes.
 
 Example:
 
